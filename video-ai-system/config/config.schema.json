@@ -1,0 +1,67 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Video AI System Configuration",
+  "description": "Configuration for the main application and its modules.",
+  "type": "object",
+  "properties": {
+    "pipeline": {
+      "type": "array",
+      "description": "A list of modules to be executed in sequence.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "module_name": {
+            "type": "string",
+            "description": "The name of the module to load."
+          },
+          "module_params": {
+            "type": "object",
+            "description": "Parameters to pass to the module's initialize() method."
+          }
+        },
+        "required": ["module_name"]
+      }
+    }
+  },
+  "required": ["pipeline"],
+  "definitions": {
+    "data_collection_params": {
+      "type": "object",
+      "properties": {
+        "video_source_path": { "type": "string" }
+      },
+      "required": ["video_source_path"]
+    },
+    "simulated_pretraining_params": {
+      "type": "object",
+      "properties": {
+        "embedding_dim": { "type": "integer", "default": 512 }
+      }
+    },
+    "active_learning_params": {
+      "type": "object",
+      "properties": {
+        "confidence_threshold": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "default": 0.5
+        },
+        "db_path": { "type": "string", "default": "annotation_queue.db" }
+      }
+    },
+    "drift_detection_params": {
+      "type": "object",
+      "properties": {
+        "baseline_path": { "type": "string" },
+        "drift_threshold": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 2,
+          "default": 0.5
+        }
+      },
+      "required": ["baseline_path"]
+    }
+  }
+}
