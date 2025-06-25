@@ -1,67 +1,56 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "Video AI System Configuration",
-  "description": "Configuration for the main application and its modules.",
+  "title": "Configuration Schema for AI Video Analysis System",
+  "description": "Defines the structure for the system's configuration files.",
   "type": "object",
   "properties": {
-    "pipeline": {
+    "system_modules": {
+      "description": "Configuration for the system's modules.",
       "type": "array",
-      "description": "A list of modules to be executed in sequence.",
       "items": {
         "type": "object",
         "properties": {
-          "module_name": {
-            "type": "string",
-            "description": "The name of the module to load."
+          "name": {
+            "description": "The name of the module.",
+            "type": "string"
           },
-          "module_params": {
+          "config": {
+            "description": "Module-specific configuration.",
             "type": "object",
-            "description": "Parameters to pass to the module's initialize() method."
+            "properties": {},
+            "additionalProperties": true
           }
         },
-        "required": ["module_name"]
-      }
-    }
-  },
-  "required": ["pipeline"],
-  "definitions": {
-    "data_collection_params": {
-      "type": "object",
-      "properties": {
-        "video_source_path": { "type": "string" }
-      },
-      "required": ["video_source_path"]
-    },
-    "simulated_pretraining_params": {
-      "type": "object",
-      "properties": {
-        "embedding_dim": { "type": "integer", "default": 512 }
+        "required": ["name", "config"]
       }
     },
-    "active_learning_params": {
+    "qdrant": {
+      "description": "Configuration for the Qdrant vector database connection.",
       "type": "object",
       "properties": {
-        "confidence_threshold": {
-          "type": "number",
-          "minimum": 0,
-          "maximum": 1,
-          "default": 0.5
+        "host": {
+          "description": "The hostname or IP address of the Qdrant instance.",
+          "type": "string"
         },
-        "db_path": { "type": "string", "default": "annotation_queue.db" }
-      }
-    },
-    "drift_detection_params": {
-      "type": "object",
-      "properties": {
-        "baseline_path": { "type": "string" },
-        "drift_threshold": {
-          "type": "number",
-          "minimum": 0,
-          "maximum": 2,
-          "default": 0.5
+        "port": {
+          "description": "The port number for the Qdrant instance.",
+          "type": "integer"
         }
       },
-      "required": ["baseline_path"]
+      "required": ["host", "port"]
+    },
+    "logging": {
+      "description": "Configuration for system-wide logging.",
+      "type": "object",
+      "properties": {
+        "level": {
+          "description": "The logging level.",
+          "type": "string",
+          "enum": ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
+        }
+      },
+      "required": ["level"]
     }
-  }
+  },
+  "required": ["system_modules", "qdrant", "logging"]
 }

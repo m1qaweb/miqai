@@ -59,9 +59,25 @@ venv.bak/
 /annotation_queue.db
 /test_video.mp4
 /baseline_for_test.npy
+/nc_workspace/
+/secrets/
 
 # VS Code
 .vscode/
 
 # Ignore user-specific application data
 %APPDATA%/
+
+# Benchmark results
+benchmark_results.json
+
+# Models
+/models/
+*.onnx
+
+# Frontend
+/frontend/node_modules/
+/frontend/build/
+
+# macOS
+.DS_Store

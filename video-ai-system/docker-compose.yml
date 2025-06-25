@@ -1,0 +1,44 @@
+version: "3.7"
+
+secrets:
+  n8n_secure_cookie:
+    file: ./secrets/n8n_secure_cookie.txt
+
+services:
+  n8n:
+    image: n8nio/n8n:latest
+    restart: always
+    ports:
+      - "127.0.0.1:5678:5678"
+    volumes:
+      - ./n8n/data:/home/node/.n8n
+      - video_data:/data
+    environment:
+      - N8N_SECURE_COOKIE_FILE=/run/secrets/n8n_secure_cookie
+    secrets:
+      - n8n_secure_cookie
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    restart: always
+    volumes:
+      - qdrant_data:/qdrant/storage
+
+  fastapi:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: always
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - video_data:/data
+      - model_storage:/app/models
+    depends_on:
+      - n8n
+      - qdrant
+
+volumes:
+  video_data:
+  qdrant_data:
+  model_storage:

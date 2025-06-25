@@ -1,14 +1,23 @@
 import cv2
 from pathlib import Path
-from typing import Any, Dict, Generator
+from typing import Any, Dict, Generator, Optional
+from video_ai_system.services.model_registry_service import ModelRegistryService
+
 
 from .module_interface import VideoModule
+
 
 class DataCollectionModule(VideoModule):
     """
     A module to read video files, apply privacy protection, and yield frames.
     """
-    def __init__(self):
+
+    def __init__(
+        self,
+        module_config: Dict[str, Any],
+        model_registry_service: Optional[ModelRegistryService] = None,
+    ):
+        super().__init__(module_config, model_registry_service)
         self.video_path = None
 
     def initialize(self, config: Dict[str, Any]) -> None:
@@ -42,7 +51,7 @@ class DataCollectionModule(VideoModule):
                 ret, frame = cap.read()
                 if not ret:
                     break
-                
+
                 processed_frame = self._apply_privacy_protection(frame)
                 yield processed_frame
         finally:

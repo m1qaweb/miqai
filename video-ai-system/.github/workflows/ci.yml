@@ -1,32 +1,38 @@
-name: Build and Test
+name: CI Pipeline
 
 on:
   push:
-    branches: ["main"]
+    branches: [main]
   pull_request:
-    branches: ["main"]
+    branches: [main]
 
 jobs:
-  build-and-test:
+  build:
     runs-on: ubuntu-latest
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v4
         with:
           python-version: "3.11"
-          cache: "pip"
 
       - name: Install dependencies
-        run: pip install -e .[dev]
+        run: |
+          python -m pip install --upgrade pip
+          pip install .[dev]
 
-      - name: Run tests
-        run: python -m pytest
+      - name: Lint with ruff
+        run: |
+          pip install ruff
+          ruff check .
 
-      # - name: Run linter
-      #   run: |
-      #     # This step is a placeholder for a future sprint.
-      #     # pip install ruff
-      #     # ruff check .
+      - name: Test with pytest
+        run: |
+          pytest
+
+      - name: Scan for vulnerabilities
+        run: |
+          pip install pip-audit
+          pip-audit

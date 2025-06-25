@@ -1,0 +1,117 @@
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Oxygen",
+    "Ubuntu", "Cantarell", "Fira Sans", "Droid Sans", "Helvetica Neue",
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background-color: #f0f2f5;
+}
+
+.App {
+  text-align: center;
+}
+
+.App-header {
+  background-color: #282c34;
+  padding: 20px;
+  color: white;
+  margin-bottom: 20px;
+}
+
+.container {
+  display: flex;
+  flex-direction: row;
+  padding: 0 20px;
+  gap: 20px;
+}
+
+.panel {
+  background-color: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  padding: 20px;
+  text-align: left;
+}
+
+.video-list-panel {
+  flex: 1;
+  max-width: 300px;
+  height: calc(100vh - 150px);
+  overflow-y: auto;
+}
+
+.video-list-panel h2 {
+  margin-top: 0;
+}
+
+.video-list-panel ul {
+  list-style-type: none;
+  padding: 0;
+}
+
+.video-list-panel li {
+  padding: 10px;
+  border-radius: 5px;
+  cursor: pointer;
+  border-bottom: 1px solid #eee;
+}
+
+.video-list-panel li:hover {
+  background-color: #f0f0f0;
+}
+
+.video-list-panel li.selected {
+  background-color: #007bff;
+  color: white;
+  font-weight: bold;
+}
+
+.video-player-panel {
+  flex: 2;
+}
+
+.detections-panel {
+  flex: 2;
+}
+
+.video-player {
+  width: 100%;
+  max-width: 100%;
+  border-radius: 5px;
+  background-color: #000;
+}
+
+.detections-canvas {
+  width: 100%;
+  max-width: 100%;
+  border-radius: 5px;
+  background-color: #eee;
+}
+
+.frame-info {
+  margin-top: 10px;
+  font-size: 0.9em;
+  color: #555;
+}
+
+.error-banner {
+  background-color: #ff4d4f;
+  color: white;
+  padding: 10px;
+  margin: 0 20px 20px 20px;
+  border-radius: 5px;
+}
+
+.detections-panel ul {
+  list-style-type: none;
+  padding: 0;
+  max-height: 300px;
+  overflow-y: auto;
+  font-size: 0.9em;
+}
+
+.detections-panel li {
+  padding: 5px;
+  border-bottom: 1px solid #eee;
+}

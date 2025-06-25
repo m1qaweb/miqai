@@ -1,0 +1,100 @@
+{
+    "system_info": {
+        "platform": "Windows",
+        "platform_release": "10",
+        "architecture": "AMD64",
+        "cpu_cores": 8,
+        "memory_total_gb": 15.91
+    },
+    "benchmark_results": [
+        {
+            "video_name": "real_test_video.mp4",
+            "config": {
+                "TARGET_SIZE": [
+                    224,
+                    224
+                ],
+                "CPU_THRESHOLD": 95,
+                "THROTTLE_DELAY": 0.1,
+                "HASH_ALGORITHM": "phash",
+                "HASH_DISTANCE_THRESHOLD": 5,
+                "HASH_SIZE": 8
+            },
+            "processing_time_seconds": 7.3919,
+            "cpu_utilization_percent": 0.0,
+            "num_keyframes_extracted": 86
+        },
+        {
+            "video_name": "real_test_video.mp4",
+            "config": {
+                "TARGET_SIZE": [
+                    224,
+                    224
+                ],
+                "CPU_THRESHOLD": 95,
+                "THROTTLE_DELAY": 0.1,
+                "HASH_ALGORITHM": "phash",
+                "HASH_DISTANCE_THRESHOLD": 10,
+                "HASH_SIZE": 8
+            },
+            "processing_time_seconds": 8.5933,
+            "cpu_utilization_percent": 0.0,
+            "num_keyframes_extracted": 47
+        },
+        {
+            "video_name": "real_test_video.mp4",
+            "config": {
+                "TARGET_SIZE": [
+                    224,
+                    224
+                ],
+                "CPU_THRESHOLD": 95,
+                "THROTTLE_DELAY": 0.1,
+                "HASH_ALGORITHM": "dhash",
+                "HASH_DISTANCE_THRESHOLD": 5,
+                "HASH_SIZE": 8
+            },
+            "processing_time_seconds": 8.0768,
+            "cpu_utilization_percent": 16.7,
+            "num_keyframes_extracted": 70
+        },
+        {
+            "video_name": "real_test_video.mp4",
+            "config": {
+                "TARGET_SIZE": [
+                    224,
+                    224
+                ],
+                "CPU_THRESHOLD": 95,
+                "THROTTLE_DELAY": 0.1,
+                "HASH_ALGORITHM": "dhash",
+                "HASH_DISTANCE_THRESHOLD": 10,
+                "HASH_SIZE": 8
+            },
+            "processing_time_seconds": 8.3447,
+            "cpu_utilization_percent": 0.0,
+            "num_keyframes_extracted": 38
+        },
+        {
+            "video_name": "real_test_video.mp4",
+            "config": {
+                "TARGET_SIZE": [
+                    224,
+                    224
+                ],
+                "CPU_THRESHOLD": 95,
+                "THROTTLE_DELAY": 0.1,
+                "HASH_ALGORITHM": "whash",
+                "HASH_DISTANCE_THRESHOLD": 10,
+                "HASH_SIZE": 16
+            },
+            "processing_time_seconds": 15.8233,
+            "cpu_utilization_percent": 0.0,
+            "num_keyframes_extracted": 110
+        }
+    ],
+    "summary": {
+        "total_runs": 5,
+        "total_videos": 1
+    }
+}

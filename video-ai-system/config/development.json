@@ -1,30 +1,37 @@
 {
-  "pipeline": [
-    {
-      "module_name": "data_collection_module",
-      "module_params": {
-        "video_source_path": "test_video.mp4"
+  "pipelines": {
+    "production": [
+      {
+        "module_name": "data_collection_module",
+        "module_params": {
+          "video_source_path": "test_video.mp4"
+        }
+      },
+      {
+        "module_name": "simulated_pretraining_module",
+        "module_params": {
+          "embedding_dim": 512
+        },
+        "model_loader": {
+          "model_name": "feature_extractor",
+          "model_version": "v1"
+        }
+      },
+      {
+        "module_name": "active_learning_module",
+        "module_params": {
+          "confidence_threshold": 0.6,
+          "db_path": "annotation_queue.db"
+        }
+      },
+      {
+        "module_name": "drift_detection_module",
+        "module_params": {
+          "baseline_path": "data/baseline_embedding.npy",
+          "drift_threshold": 0.7
+        }
       }
-    },
-    {
-      "module_name": "simulated_pretraining_module",
-      "module_params": {
-        "embedding_dim": 512
-      }
-    },
-    {
-      "module_name": "active_learning_module",
-      "module_params": {
-        "confidence_threshold": 0.6,
-        "db_path": "annotation_queue.db"
-      }
-    },
-    {
-      "module_name": "drift_detection_module",
-      "module_params": {
-        "baseline_path": "data/baseline_embedding.npy",
-        "drift_threshold": 0.7
-      }
-    }
-  ]
+    ]
+  },
+  "model_registry_path": "local_model_registry"
 }

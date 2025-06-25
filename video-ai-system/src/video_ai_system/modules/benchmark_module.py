@@ -2,11 +2,14 @@ import time
 from typing import Any, Dict
 from video_ai_system.modules.module_interface import VideoModule
 
+
 class BenchmarkModule(VideoModule):
     """
     A simple module to simulate processing work for benchmarking purposes.
     """
-    def __init__(self):
+
+    def __init__(self, module_config: Dict[str, Any], model_registry_service=None):
+        super().__init__(module_config, model_registry_service)
         self.delay_seconds = 0.01
 
     def initialize(self, config: Dict[str, Any]) -> None:
