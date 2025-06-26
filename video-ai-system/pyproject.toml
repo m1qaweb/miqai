@@ -30,7 +30,7 @@ dependencies = [
     "filelock==3.15.4",
     "httpx==0.28.1",
     "ImageHash==4.3.1",
-    "Pillow==10.5.0",
+    "Pillow",
 ]
 classifiers = [
     "Programming Language :: Python :: 3",
@@ -52,10 +52,15 @@ dev = [
 ]
 
 [tool.setuptools.packages.find]
-where = ["src"]
+where = ["."]
 
 [tool.black]
 line-length = 88
 
 [tool.ruff]
 line-length = 88
+
+[tool.pytest.ini_options]
+markers = [
+    "integration: marks tests as integration tests",
+]

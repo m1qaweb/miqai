@@ -36,8 +36,10 @@ class Settings(BaseSettings):
     # Redis DSN for ARQ task queue
     REDIS_DSN: RedisDsn = "redis://localhost:6379/0"
 
-    # Path to the model registry directory
-    MODEL_REGISTRY_PATH: str = "./models"
+    # --- Data and Model Paths ---
+    # These paths can be overridden by environment variables.
+    # e.g. set MODEL_REGISTRY_PATH=/path/to/your/models in a .env file
+    MODEL_REGISTRY_PATH: str = "models"
 
     # Default path to the pipeline configuration file
     PIPELINE_CONFIG_PATH: str = "config/development.json"
@@ -51,7 +53,7 @@ class Settings(BaseSettings):
 
     # --- Inference Service Configuration ---
     DEFAULT_MODEL_NAME: str = "yolov8n-coco"
-    model_path: str = "models/yolov8n.onnx"
+    MODEL_PATH: str = "models/yolov8n.onnx"
 
     # Qdrant settings
     QDRANT_HOST: str = "localhost"

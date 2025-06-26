@@ -77,15 +77,13 @@ def test_full_video_analysis_pipeline(api_client, qdrant_client):
     # This test is therefore a template for the full workflow.
     # A developer would need to complete the job submission part.
     
-    # --- Placeholder for job submission ---
-    # response = api_client.post("/analyze_test_file", json={"file_path": SAMPLE_VIDEO_PATH})
-    # assert response.status_code == 202
-    # task_id = response.json()["task_id"]
-    # status_endpoint = response.json()["status_endpoint"]
-    
-    # Since we can't run the above, we'll skip the test for now
-    # but provide the full logic for a developer to complete.
-    pytest.skip("Skipping full pipeline test until a test-specific file submission method is implemented.")
+    # --- Step 1: Submit the video for analysis ---
+    with open(SAMPLE_VIDEO_PATH, "rb") as f:
+        response = api_client.post("/analyze", files={"video_file": f})
+
+    assert response.status_code == 202
+    task_id = response.json()["task_id"]
+    status_endpoint = f"/analysis/{task_id}"
 
     # --- Step 2: Poll for job completion ---
     start_time = time.time()

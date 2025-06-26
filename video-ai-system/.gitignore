@@ -81,3 +81,6 @@ benchmark_results.json
 
 # macOS
 .DS_Store
+
+# Data files
+/video-ai-system-data/

@@ -11,8 +11,8 @@ services:
     ports:
       - "127.0.0.1:5678:5678"
     volumes:
-      - ./n8n/data:/home/node/.n8n
-      - video_data:/data
+      - D:\video-ai-system-data\n8n:/home/node/.n8n
+      - D:\video-ai-system-data\videos:/data
     environment:
       - N8N_SECURE_COOKIE_FILE=/run/secrets/n8n_secure_cookie
     secrets:
@@ -32,13 +32,11 @@ services:
     ports:
       - "127.0.0.1:8000:8000"
     volumes:
-      - video_data:/data
-      - model_storage:/app/models
+      - D:\video-ai-system-data\videos:/data
+      - D:\video-ai-system-data\models:/app/models
     depends_on:
       - n8n
       - qdrant
 
 volumes:
-  video_data:
   qdrant_data:
-  model_storage:

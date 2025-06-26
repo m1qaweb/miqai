@@ -6,6 +6,8 @@ from typing import Dict, List, Optional
 
 from filelock import FileLock, Timeout
 
+from video_ai_system.config import settings
+
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -19,13 +21,17 @@ class ModelRegistryService:
     a file lock to ensure safe concurrent writes to the registry file.
     """
 
-    def __init__(self, registry_path: str = "models/registry.json"):
+    def __init__(self, registry_path: Optional[str] = None):
         """
         Initializes the ModelRegistryService.
 
         Args:
             registry_path: The path to the JSON file serving as the model registry.
+                           If not provided, it defaults to the path from the global settings.
         """
+        if registry_path is None:
+            registry_path = f"{settings.MODEL_REGISTRY_PATH}/registry.json"
+        
         self.registry_path = Path(registry_path)
         self.lock_path = self.registry_path.with_suffix(".lock")
         self._ensure_registry_exists()

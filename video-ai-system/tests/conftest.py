@@ -6,7 +6,7 @@ import tempfile
 import shutil
 from video_ai_system.services.model_registry_service import ModelRegistryService
 from video_ai_system.services.pipeline_service import PipelineService
-
+import httpx
 
 @pytest.fixture(scope="session")
 def dummy_video_file():
@@ -46,3 +46,11 @@ def pipeline_service(model_registry_service):
     Provides a clean PipelineService instance for each test, using the model_registry_service fixture.
     """
     return PipelineService(model_registry_service)
+
+@pytest.fixture(scope="module")
+def api_client():
+    """
+    Provides an HTTPX client for making requests to the test API.
+    """
+    with httpx.Client(base_url="http://localhost:8000/api/v1") as client:
+        yield client

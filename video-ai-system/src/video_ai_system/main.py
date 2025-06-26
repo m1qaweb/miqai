@@ -110,18 +110,22 @@ async def lifespan(app: FastAPI):
     """
     Manages the application's lifespan, including service initialization.
     """
+    logging.info("Application startup...")
     # Configure OpenTelemetry
     configure_tracing("video-ai-system-api")
+    logging.info("Tracing configured.")
 
     # Initialize ARQ Redis pool
     app.state.redis_pool = await arq.create_pool(RedisSettings.from_dsn(str(settings.REDIS_DSN)))
+    logging.info("Redis pool created.")
 
     # Initialize services
     model_registry = ModelRegistryService(registry_path=str(settings.MODEL_REGISTRY_PATH))
     app.state.model_registry_service = model_registry
+    logging.info("ModelRegistryService initialized.")
 
     # Initialize InferenceService with the production model
-    production_model = model_registry.get_production_model(model_name=settings.DEFAULT_MODEL_NAME)
+    production_model = model_registry.get_production_model(model_name=settings.DEFAULT_MODEL_.DEFAULT_MODEL_NAME)
     if not production_model:
         logging.warning(
             f"No production model found for '{settings.DEFAULT_MODEL_NAME}'. "
@@ -130,20 +134,26 @@ async def lifespan(app: FastAPI):
         app.state.inference_service = None
     else:
         app.state.inference_service = InferenceService(model_path=production_model["path"])
+        logging.info("InferenceService initialized.")
 
     # Initialize Qdrant client and other services
     app.state.qdrant_client = QdrantClient(host=settings.QDRANT_HOST, port=settings.QDRANT_PORT)
+    logging.info("QdrantClient initialized.")
     app.state.vector_db_service = VectorDBService()
+    logging.info("VectorDBService initialized.")
     app.state.active_learning_service = ActiveLearningService(
         qdrant_client=app.state.qdrant_client,
         collection_name=settings.QDRANT_COLLECTION,
     )
+    logging.info("ActiveLearningService initialized.")
     app.state.drift_detection_service = DriftDetectionService(
         vector_db_service=app.state.vector_db_service,
         pca_components=settings.PCA_COMPONENTS,
         drift_threshold=settings.DRIFT_THRESHOLD,
     )
+    logging.info("DriftDetectionService initialized.")
     app.state.analytics_service = AnalyticsService(vector_db_service=app.state.vector_db_service)
+    logging.info("AnalyticsService initialized.")
 
     yield
 

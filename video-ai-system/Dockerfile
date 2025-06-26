@@ -30,13 +30,16 @@ WORKDIR /home/appuser/app
 COPY pyproject.toml .
 
 # Install poetry and dependencies
-RUN pip install --no-cache-dir .
+RUN pip install --no-cache-dir ".[dev]"
 
 # Copy the rest of the application source code
 COPY --chown=appuser:appuser ./src /home/appuser/app/src
 
 # Copy the built frontend assets from the builder stage
 COPY --chown=appuser:appuser --from=builder /app/frontend/build /home/appuser/app/static
+
+# Add the local bin to the PATH
+ENV PATH="/home/appuser/.local/bin:${PATH}"
 
 # Command to run the application
 CMD ["uvicorn", "src.video_ai_system.main:app", "--host", "0.0.0.0", "--port", "8000"]
