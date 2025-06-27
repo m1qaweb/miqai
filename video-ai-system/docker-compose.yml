@@ -2,6 +2,12 @@ secrets:
   n8n_secure_cookie:
     file: ./secrets/n8n_secure_cookie.txt
 
+volumes:
+  n8n_data:
+  qdrant_data:
+  shared_data:
+  models_data:
+
 services:
   n8n:
     image: n8nio/n8n:latest
@@ -9,8 +15,8 @@ services:
     ports:
       - "127.0.0.1:5678:5678"
     volumes:
-      - D:\DockerData\DockerDesktopWSL\n8n:/home/node/.n8n
-      - D:\DockerData\DockerDesktopWSL\videos:/data
+      - n8n_data:/home/node/.n8n
+      - shared_data:/data
     environment:
       - N8N_SECURE_COOKIE_FILE=/run/secrets/n8n_secure_cookie
     secrets:
@@ -20,7 +26,7 @@ services:
     image: qdrant/qdrant:latest
     restart: always
     volumes:
-      - D:\DockerData\DockerDesktopWSL\qdrant_data:/qdrant/storage
+      - qdrant_data:/qdrant/storage
 
   redis:
     image: redis:7-alpine
@@ -34,9 +40,25 @@ services:
     ports:
       - "127.0.0.1:8000:8000"
     volumes:
-      - D:\DockerData\DockerDesktopWSL\videos:/data
-      - D:\DockerData\DockerDesktopWSL\models:/app/models
+      - shared_data:/data
+      - models_data:/app/models
     depends_on:
-      - n8n
       - qdrant
       - redis
+    secrets:
+      - n8n_secure_cookie
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: always
+    command: ["arq", "video_ai_system.worker.WorkerSettings"]
+    depends_on:
+      - redis
+      - qdrant
+    volumes:
+      - shared_data:/data
+      - models_data:/app/models
+    secrets:
+      - n8n_secure_cookie
