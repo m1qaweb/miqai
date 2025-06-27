@@ -21,8 +21,8 @@ dependencies = [
     "opentelemetry-api",
     "opentelemetry-sdk",
     "opentelemetry-exporter-otlp",
-    "opentelemetry-instrumentation-fastapi",
     "opentelemetry-instrumentation-arq",
+    "opentelemetry-instrumentation-fastapi",
     "onnxruntime==1.22.0",
     "qdrant-client==1.7.3",
     "scikit-learn==1.5.1",
@@ -48,11 +48,10 @@ dev = [
     "black==25.1.0",
     "ruff==0.12.0",
     "trio==0.26.0",
-    "opentelemetry-instrumentation-fastapi",
 ]
 
 [tool.setuptools.packages.find]
-where = ["."]
+where = ["src"]
 
 [tool.black]
 line-length = 88
@@ -64,3 +63,11 @@ line-length = 88
 markers = [
     "integration: marks tests as integration tests",
 ]
+
+[tool.poetry]
+packages = [
+    { include = "video_ai_system", from = "src" }
+]
+
+[tool.poetry.scripts]
+verify_pythonpath = "video_ai_system.utils:verify_pythonpath"

@@ -1,7 +1,9 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import RedisDsn, computed_field
-from typing import Optional
+from typing import Optional, Dict
 import logging
+import json
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -9,21 +11,16 @@ class Settings(BaseSettings):
     """
     Manages application configuration using a layered approach.
     Values are loaded from environment variables, which can be populated
-    by a .env file.
+    by a .env file. It also loads a JSON configuration file.
     """
-    model_config = SettingsConfigDict(env_file='.env', env_file_encoding='utf-8')
+    model_config = SettingsConfigDict(env_file='.env', env_file_encoding='utf-8', extra='ignore')
 
     # --- Security ---
-    # Path to the file containing the API key (e.g., a Docker secret)
     API_KEY_SECRET_FILE: Optional[str] = None
 
     @computed_field
     @property
     def api_key(self) -> Optional[str]:
-        """
-        Reads the API key from the secret file.
-        Caches the result to avoid repeated file reads.
-        """
         if not self.API_KEY_SECRET_FILE:
             return None
         try:
@@ -37,11 +34,8 @@ class Settings(BaseSettings):
     REDIS_DSN: RedisDsn = "redis://localhost:6379/0"
 
     # --- Data and Model Paths ---
-    # These paths can be overridden by environment variables.
-    # e.g. set MODEL_REGISTRY_PATH=/path/to/your/models in a .env file
     MODEL_REGISTRY_PATH: str = "models"
-
-    # Default path to the pipeline configuration file
+    model_registry_path: Optional[str] = None
     PIPELINE_CONFIG_PATH: str = "config/development.json"
 
     # --- Preprocessing Service Configuration ---
@@ -59,7 +53,7 @@ class Settings(BaseSettings):
     QDRANT_HOST: str = "localhost"
     QDRANT_PORT: int = 6333
     QDRANT_COLLECTION: str = "video_frames"
-    EMBEDDING_DIMENSION: int = 512 # Example dimension for YOLOv8 feature map
+    EMBEDDING_DIMENSION: int = 512
 
     # --- Active Learning Service Configuration ---
     LOW_CONFIDENCE_THRESHOLD: float = 0.5
@@ -67,6 +61,30 @@ class Settings(BaseSettings):
     # --- Drift Detection Service Configuration ---
     DRIFT_THRESHOLD: float = 0.1
     PCA_COMPONENTS: int = 10
+
+    # --- Pipeline Configuration ---
+    pipelines: Optional[Dict] = None
+
+    # --- Shadow Testing ---
+    LOKI_API_URL: Optional[str] = None
+
+    def __init__(self, **values):
+        super().__init__(**values)
+        self._load_json_config()
+        if self.model_registry_path:
+            self.MODEL_REGISTRY_PATH = self.model_registry_path
+
+    def _load_json_config(self):
+        """Loads settings from a JSON file and merges them."""
+        config_path = Path(self.PIPELINE_CONFIG_PATH)
+        if config_path.is_file():
+            logger.info(f"Loading configuration from {config_path}")
+            with open(config_path) as f:
+                config_data = json.load(f)
+                for key, value in config_data.items():
+                    setattr(self, key, value)
+        else:
+            logger.warning(f"JSON configuration file not found at {config_path}")
 
 # Create a single, importable instance of the settings
 settings = Settings()

@@ -14,7 +14,7 @@ from arq.connections import RedisSettings
 from typing import Tuple
 
 # Observability imports
-from opentelemetry_instrumentation_fastapi import FastAPIInstrumentor
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from .tracing import configure_tracing
 
 from video_ai_system.config import settings
@@ -125,7 +125,7 @@ async def lifespan(app: FastAPI):
     logging.info("ModelRegistryService initialized.")
 
     # Initialize InferenceService with the production model
-    production_model = model_registry.get_production_model(model_name=settings.DEFAULT_MODEL_.DEFAULT_MODEL_NAME)
+    production_model = model_registry.get_production_model(model_name=settings.DEFAULT_MODEL_NAME)
     if not production_model:
         logging.warning(
             f"No production model found for '{settings.DEFAULT_MODEL_NAME}'. "

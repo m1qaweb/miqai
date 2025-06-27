@@ -33,5 +33,7 @@
       }
     ]
   },
-  "model_registry_path": "local_model_registry"
+  "model_registry_path": "local_model_registry",
+  "REDIS_DSN": "redis://redis:6379/0",
+  "QDRANT_HOST": "qdrant"
 }
