@@ -1,19 +1,48 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import RedisDsn, computed_field
-from typing import Optional, Dict
+from pydantic import RedisDsn, computed_field, Field
+from typing import Optional, Dict, Any
 import logging
 import json
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
+class PreprocessingSettings(BaseSettings):
+    hist_threshold: float = 0.8
+    target_width: int = 224
+    target_height: int = 224
+    cpu_threshold: int = 85
+    throttle_delay: float = 0.5
+
+class InferenceSettings(BaseSettings):
+    default_model_name: str = "yolov8n-coco"
+    model_path: str = "models/yolov8n.onnx"
+
+class QdrantSettings(BaseSettings):
+    host: str = "localhost"
+    port: int = 6333
+    collection: str = "video_frames"
+    embedding_dimension: int = 512
+
+class ActiveLearningSettings(BaseSettings):
+    low_confidence_threshold: float = 0.5
+
+class DriftDetectionSettings(BaseSettings):
+    drift_threshold: float = 0.1
+    pca_components: int = 10
+
 class Settings(BaseSettings):
     """
     Manages application configuration using a layered approach.
-    Values are loaded from environment variables, which can be populated
-    by a .env file. It also loads a JSON configuration file.
+    Values are loaded from environment variables, a .env file, and a JSON config file.
     """
-    model_config = SettingsConfigDict(env_file='.env', env_file_encoding='utf-8', extra='ignore')
+    model_config = SettingsConfigDict(
+        env_file='.env', 
+        env_file_encoding='utf-8', 
+        extra='ignore',
+        json_file="config/development.json",
+        json_file_encoding="utf-8"
+    )
 
     # --- Security ---
     API_KEY_SECRET_FILE: Optional[str] = None
@@ -35,56 +64,19 @@ class Settings(BaseSettings):
 
     # --- Data and Model Paths ---
     MODEL_REGISTRY_PATH: str = "models"
-    model_registry_path: Optional[str] = None
-    PIPELINE_CONFIG_PATH: str = "config/development.json"
 
-    # --- Preprocessing Service Configuration ---
-    PREPROCESSING_HIST_THRESHOLD: float = 0.8
-    PREPROCESSING_TARGET_WIDTH: int = 224
-    PREPROCESSING_TARGET_HEIGHT: int = 224
-    PREPROCESSING_CPU_THRESHOLD: int = 85
-    PREPROCESSING_THROTTLE_DELAY: float = 0.5
-
-    # --- Inference Service Configuration ---
-    DEFAULT_MODEL_NAME: str = "yolov8n-coco"
-    MODEL_PATH: str = "models/yolov8n.onnx"
-
-    # Qdrant settings
-    QDRANT_HOST: str = "localhost"
-    QDRANT_PORT: int = 6333
-    QDRANT_COLLECTION: str = "video_frames"
-    EMBEDDING_DIMENSION: int = 512
-
-    # --- Active Learning Service Configuration ---
-    LOW_CONFIDENCE_THRESHOLD: float = 0.5
-
-    # --- Drift Detection Service Configuration ---
-    DRIFT_THRESHOLD: float = 0.1
-    PCA_COMPONENTS: int = 10
-
+    # --- Service Configurations ---
+    preprocessing: PreprocessingSettings = Field(default_factory=PreprocessingSettings)
+    inference: InferenceSettings = Field(default_factory=InferenceSettings)
+    qdrant: QdrantSettings = Field(default_factory=QdrantSettings)
+    active_learning: ActiveLearningSettings = Field(default_factory=ActiveLearningSettings)
+    drift_detection: DriftDetectionSettings = Field(default_factory=DriftDetectionSettings)
+    
     # --- Pipeline Configuration ---
-    pipelines: Optional[Dict] = None
+    pipelines: Optional[Dict[str, Any]] = None
 
     # --- Shadow Testing ---
     LOKI_API_URL: Optional[str] = None
-
-    def __init__(self, **values):
-        super().__init__(**values)
-        self._load_json_config()
-        if self.model_registry_path:
-            self.MODEL_REGISTRY_PATH = self.model_registry_path
-
-    def _load_json_config(self):
-        """Loads settings from a JSON file and merges them."""
-        config_path = Path(self.PIPELINE_CONFIG_PATH)
-        if config_path.is_file():
-            logger.info(f"Loading configuration from {config_path}")
-            with open(config_path) as f:
-                config_data = json.load(f)
-                for key, value in config_data.items():
-                    setattr(self, key, value)
-        else:
-            logger.warning(f"JSON configuration file not found at {config_path}")
 
 # Create a single, importable instance of the settings
 settings = Settings()
