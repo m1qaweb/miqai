@@ -13,8 +13,5 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      - name: Install Docker Compose
-        run: sudo pip install docker-compose
-
       - name: Build the Docker image
-        run: docker-compose -f video-ai-system/docker-compose.yml build fastapi
+        run: docker compose -f video-ai-system/docker-compose.yml build fastapi
