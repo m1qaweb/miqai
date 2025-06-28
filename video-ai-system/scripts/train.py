@@ -33,10 +33,10 @@ def main():
                         help='Number of GPUs available on the current host.')
 
     # --- Hyperparameters ---
-    parser.add_argument('--epochs', type=int, default=800, help='Total number of training epochs.')
-    parser.add_argument('--lr', type=float, default=1.5e-4, help='Learning rate.')
-    parser.add_argument('--batch_size', type=int, default=8, help='Batch size per GPU.')
-    parser.add_argument('--warmup_epochs', type=int, default=40, help='Number of warmup epochs for the learning rate scheduler.')
+    parser.add_argument('--total-epochs', type=int, default=800, dest='epochs', help='Total number of training epochs.')
+    parser.add_argument('--learning-rate', type=float, default=1.5e-4, dest='lr', help='Learning rate.')
+    parser.add_argument('--batch-size', type=int, default=8, dest='batch_size', help='Batch size per GPU.')
+    parser.add_argument('--warmup-epochs', type=int, default=40, dest='warmup_epochs', help='Number of warmup epochs for the learning rate scheduler.')
     parser.add_argument('--seed', type=int, default=42, help='Random seed for reproducibility.')
 
     args = parser.parse_args()
@@ -57,17 +57,24 @@ def main():
     data_root = args.train
     work_dir = os.path.join(args.model_dir, 'work_dir')
     os.makedirs(work_dir, exist_ok=True)
-    
-    # For self-supervised learning, we just need a list of video files.
-    # We assume the training channel contains video files directly.
-    # A real-world scenario might have a more complex structure and require
-    # creating an annotation file here.
-    ann_file_train = os.path.join(data_root, 'annotations.txt')
+
+    print(f"--- Preparing Annotation File ---")
+    print(f"Searching for videos in: {data_root}")
+
+    # Recursively find all video files and create an annotation file with relative paths.
+    ann_file_train = os.path.join(work_dir, 'train.txt')
+    video_count = 0
     with open(ann_file_train, 'w') as f:
-        for video_file in os.listdir(data_root):
-            if video_file.endswith(('.mp4', '.webm')):
-                # mmaction2 expects a placeholder label for pre-training
-                f.write(f"{video_file} -1\n")
+        for root, _, files in os.walk(data_root):
+            for file in files:
+                if file.endswith(('.mp4', '.avi', '.mov', '.mkv', '.webm')):
+                    relative_path = os.path.relpath(os.path.join(root, file), data_root)
+                    # mmaction2 expects a placeholder label for pre-training
+                    f.write(f"{relative_path} -1\n")
+                    video_count += 1
+    
+    print(f"Found {video_count} videos.")
+    print(f"Annotation file created at: {ann_file_train}")
 
     config_content = f"""
 _base_ = [
