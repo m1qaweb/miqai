@@ -3,6 +3,7 @@ import logging
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional
+from pydantic import BaseModel, Field
 
 from filelock import FileLock, Timeout
 
@@ -11,6 +12,14 @@ from video_ai_system.config import settings
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+class ModelVersion(BaseModel):
+    name: str = Field(..., description="The name of the model.")
+    version: str = Field(..., description="The version of the model.")
+    stage: str = Field(..., description="The deployment stage (e.g., Staging, Production).")
+    description: Optional[str] = Field(None, description="A description of the model version.")
+    path: Optional[str] = Field(None, description="The path to the model artifacts.")
+
 
 class ModelRegistryService:
     """

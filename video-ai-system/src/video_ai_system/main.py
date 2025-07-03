@@ -9,22 +9,30 @@ import arq
 from arq.connections import RedisSettings
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from qdrant_client import QdrantClient
+from prometheus_client import CollectorRegistry
+from video_ai_system.services.comparison_service import ComparisonService
 
 from video_ai_system.config import settings
 from video_ai_system.tracing import configure_tracing
 from video_ai_system.api.routes import api_router
+from video_ai_system.api.governance_routes import router as governance_router
 from video_ai_system.services.model_registry_service import ModelRegistryService
 from video_ai_system.services.inference_service import InferenceService
 from video_ai_system.services.vector_db_service import VectorDBService
-from video_ai_system.services.active_learning_service import ActiveLearningService
+from video_ai_system.services.active_learning_service import ActiveLearningService, CVATService
 from video_ai_system.services.drift_detection_service import DriftDetectionService
 from video_ai_system.services.analytics_service import AnalyticsService
+from video_ai_system.services.shadow_testing_service import ShadowTestingService
+from video_ai_system.services.audit_service import AuditService
+from video_ai_system.services.inference_router import InferenceRouter
+from video_ai_system.adaptation_controller import AdaptationController, load_rules_from_yaml
 
 # --- Application Lifespan ---
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
-    Manages the application's lifespan, including service initialization.
+    Manages the application's lifespan, including service initialization
+    and background task management for the AdaptationController.
     """
     logging.info("Application startup...")
     configure_tracing("video-ai-system-api")
@@ -34,7 +42,8 @@ async def lifespan(app: FastAPI):
     app.state.services = {}
 
     # ARQ Redis pool
-    app.state.redis_pool = await arq.create_pool(RedisSettings.from_dsn(str(settings.REDIS_DSN)))
+    redis_settings = RedisSettings.from_dsn(str(settings.REDIS_DSN))
+    app.state.redis_pool = await arq.create_pool(redis_settings)
     logging.info("Redis pool created.")
 
     # Model Registry
@@ -42,28 +51,38 @@ async def lifespan(app: FastAPI):
     app.state.services["model_registry"] = model_registry
     logging.info("ModelRegistryService initialized.")
 
-    # Inference Service
-    production_model = model_registry.get_production_model(model_name=settings.inference.default_model_name)
-    inference_service = InferenceService()
-    if production_model:
-        inference_service.load_model(production_model["path"])
-        logging.info(f"InferenceService initialized with model: {production_model['path']}")
-    else:
-        logging.warning(
-            f"No production model found for '{settings.inference.default_model_name}'. "
-            "The InferenceService will not be available until a model is activated."
-        )
-    app.state.services["inference"] = inference_service
+    # Inference Router
+    # This would typically be loaded from a more dynamic config
+    model_mapping = {
+        "NORMAL": "yolov8n-balanced",
+        "DEGRADED": "yolov8n-light",
+        "CRITICAL": "yolov8n-tiny",
+    }
+    inference_router = InferenceRouter(
+        model_mapping=model_mapping,
+        redis_client=app.state.redis_pool,
+        model_registry_service=model_registry,
+        inference_service=InferenceService() # The router will manage the model loading
+    )
+    await inference_router.initialize() # Load initial model
+    app.state.services["inference_router"] = inference_router
+    logging.info("InferenceRouter initialized.")
 
     # Qdrant client and Vector DB Service
-    qdrant_client = QdrantClient(host=settings.qdrant.host, port=settings.qdrant.port)
-    app.state.services["vector_db"] = VectorDBService(client=qdrant_client, collection_name=settings.qdrant.collection)
+    app.state.services["vector_db"] = VectorDBService()
     logging.info("VectorDBService initialized.")
 
     # Other services
+    cvat_service = CVATService(
+        cvat_url=os.environ.get("CVAT_URL", "http://localhost:8080"),
+        username=os.environ.get("CVAT_USER", "admin"),
+        password=os.environ.get("CVAT_PASSWORD", "password"),
+    )
+    app.state.services["cvat"] = cvat_service
     app.state.services["active_learning"] = ActiveLearningService(
-        qdrant_client=qdrant_client,
-        collection_name=settings.qdrant.collection,
+        qdrant_client=app.state.services["vector_db"].client,
+        collection_name=app.state.services["vector_db"].collection_name,
+        cvat_service=cvat_service,
     )
     logging.info("ActiveLearningService initialized.")
     
@@ -77,11 +96,44 @@ async def lifespan(app: FastAPI):
     app.state.services["analytics"] = AnalyticsService(vector_db_service=app.state.services["vector_db"])
     logging.info("AnalyticsService initialized.")
 
+    # Dependencies for ShadowTestingService
+    prometheus_registry = CollectorRegistry()
+    comparison_service = ComparisonService()
+    app.state.services["comparison"] = comparison_service
+    logging.info("ComparisonService initialized.")
+
+    app.state.services["shadow_testing"] = ShadowTestingService(
+        inference_service=inference_router.inference_service, # Use the router's service
+        logger=logging.getLogger(__name__),
+        registry=prometheus_registry,
+        comparison_service=comparison_service,
+    )
+    logging.info("ShadowTestingService initialized.")
+
+    app.state.services["audit"] = AuditService(log_file_path=settings.audit.log_file_path)
+    logging.info(f"AuditService initialized with log file at {settings.audit.log_file_path}.")
+
+    # Initialize and start the Adaptation Controller
+    rules = load_rules_from_yaml("config/adaptation_rules.yml")
+    adaptation_controller = AdaptationController(
+        rules=rules,
+        inference_router=inference_router,
+        prometheus_url=settings.PROMETHEUS_URL,
+        poll_interval_seconds=settings.adaptation.poll_interval_seconds,
+        cooldown_seconds=settings.adaptation.cooldown_seconds,
+    )
+    adaptation_controller.start()
+    app.state.adaptation_controller = adaptation_controller
+    logging.info("AdaptationController started.")
+
     yield
 
     # --- Teardown Logic ---
-    logging.info("Application shutting down. Closing Redis pool.")
+    logging.info("Application shutting down...")
+    await app.state.adaptation_controller.stop()
+    logging.info("AdaptationController stopped.")
     await app.state.redis_pool.close()
+    logging.info("Redis pool closed.")
 
 # --- Application Setup ---
 app = FastAPI(
@@ -98,6 +150,7 @@ instrumentator.expose(app)
 
 # Mount the main API router
 app.include_router(api_router, prefix="/api/v1")
+app.include_router(governance_router, prefix="/api/v1/governance")
 
 # --- Static Files Hosting ---
 class SPAStaticFiles(StaticFiles):

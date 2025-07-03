@@ -1,258 +1,145 @@
-# Shadow Testing Service Design
+# Design: Shadow Testing & Canary Deployment Strategy
 
+**Version:** 1.0
 **Author:** Architect Mode
-**Date:** 2025-06-25
 **Status:** Proposed
 
-## 1. Overview
+## 1. Overview & Strategic Goals
 
-This document outlines the design for a `ShadowTestingService` within the AI Video Analysis System. The primary goal of this service is to enable safe, non-disruptive validation of candidate models against the current production model. By running a "shadow" inference in parallel with the main analysis, we can gather comparative performance data without impacting the live service, allowing for data-driven decisions on model promotion.
+This document outlines a sophisticated, registry-driven architecture for safely validating and deploying new AI models. The strategy incorporates both Shadow Testing for offline validation and Canary Deployments for low-risk, live traffic testing.
 
-### 1.1. Design Goals
+### 1.1. Strategic Goals
 
-- **Non-Interfering:** The shadow testing process must not degrade the performance or reliability of the primary video analysis workflow.
-- **Insightful:** The system must collect a rich set of comparison metrics to provide a comprehensive understanding of a candidate model's behavior relative to the production model.
-- **Observable:** Results must be easily accessible and visualizable through our existing observability stack (Grafana/Loki) to monitor candidate performance in near real-time.
-- **Extensible:** The architecture must be modular, allowing for the future addition of new comparison metrics and a potential shift to a fully asynchronous execution model.
+- **From Validation to Continuous Improvement:** This system is not just a safety net; it's an engine for continuous improvement. By providing high-fidelity comparisons, it will surface subtle regressions and improvements, guiding future research and optimization efforts.
+- **Trust and Automation:** The primary goal is to build trust in the automated model lifecycle. The system will enable automated promotions for clear wins while ensuring rigorous, human-in-the-loop governance for complex cases.
+- **Decoupled & Scalable Architecture:** The design ensures that adding shadowing and canary capabilities does not degrade the performance or maintainability of the core pipeline.
 
-## 2. Architecture & Selected Approach
+## 2. Architecture: A Decoupled, Registry-Driven Approach
 
-### 2.1. Execution Strategy
-
-For the initial implementation, a **synchronous execution model** is chosen for its simplicity. The main `analyze_video` ARQ task will directly invoke the `ShadowTestingService` after the production inference is complete.
-
-**Justification:** This approach minimizes initial implementation complexity. While it increases the total processing time for a video analysis task when shadow testing is active, it is acceptable for the current scale. The design explicitly plans for a future transition to a more scalable asynchronous model.
-
-### 2.2. Data Storage Strategy
-
-Comparison metrics will be stored via **Structured JSON Logging to Loki**.
-
-**Justification:** This approach perfectly aligns with our MLOps and observability-first strategy. It leverages our existing, scalable logging pipeline (Logger -> Promtail -> Loki) and requires no new database infrastructure. It provides immediate benefits for visualization and dashboarding in Grafana using LogQL and offers a flexible, schema-less way to evolve our metrics over time.
-
-## 3. Workflow Diagram
+The architecture is driven by the `Model Registry`, which acts as the single source of truth for model states (`PRODUCTION`, `CANDIDATE`, `SHADOW`, `CANARY`). This decouples the control plane (governance) from the data plane (live requests).
 
 ```mermaid
-sequenceDiagram
-    participant User
-    participant API
-    participant ARQ Worker
-    participant ShadowTestingService
-    participant InferenceService
-    participant ModelRegistryService
-    participant Logger
-    participant Loki
-
-    User->>API: POST /api/v1/videos (upload)
-    API->>ARQ Worker: Enqueue analyze_video(video_path)
-    ARQ Worker->>InferenceService: analyze(video_path, model='production')
-    InferenceService-->>ARQ Worker: production_results, prod_latency
-
-    alt If CANDIDATE_MODEL_ID is set
-        ARQ Worker->>ShadowTestingService: compare_and_log(video_id, prod_results, prod_latency)
-        ShadowTestingService->>InferenceService: analyze(video_path, model='candidate')
-        InferenceService-->>ShadowTestingService: candidate_results, cand_latency
-        ShadowTestingService->>ShadowTestingService: Calculate rich comparison metrics
-        ShadowTestingService->>Logger: log.info({level: "info", message: "shadow_test_result", ...metrics})
-        Logger->>Loki: Forward structured log
+graph TD
+    subgraph Control Plane
+        MR(Model Registry)
+        GD(Governance Dashboard)
+        GD -- Manages States --> MR
     end
 
-    User->>API: GET /api/v1/shadow-testing/results
-    API->>Loki: Query logs with LogQL
-    Loki-->>API: Return JSON results
-    API-->>User: Show comparison data
+    subgraph Data Plane
+        A[API: /analyze_video] --> B(PipelineService)
+        B -- "1. Get Models (prod, shadow?)" --> MR
+        B -- "2. Send Request" --> R(Inference Router)
+
+        subgraph Shadowing Flow
+            R -- "Fire-and-Forget" --> SS(Shadowing Service)
+            SS -- "Async Call" --> IC_Shadow[InferenceService (Candidate)]
+            IC_Shadow -- "Result" --> CS(Comparison Service)
+            CS -- "Writes Report" --> DB[(Report Database)]
+            GD -- "Reads Report" --> DB
+        end
+
+        subgraph Live Traffic Flow
+            R -- "Weighted Split (e.g., 99% / 1%)" --> IP[InferenceService (Production)]
+            R -- " " --> IC_Canary[InferenceService (Canary)]
+            IP -- "Result" --> FinalResponse{User Response}
+            IC_Canary -- "Result" --> FinalResponse
+        end
+    end
+
+    subgraph Observability
+        IP -- "Metrics" --> M[Observability Stack]
+        IC_Canary -- "Metrics" --> M
+        M -- "Alerts (Latency, Errors)" --> R
+        M -- " " --> GD
+    end
+
+    style R fill:#dae8fc
+    style SS fill:#f8cecc
+    style CS fill:#f5f5f5
 ```
 
-## 4. Component Design
+## 3. Component Design
 
-### 4.1. Configuration
+### 3.1. `InferenceRouter` (Smart Gateway)
 
-Shadow testing will be controlled by a single environment variable:
+A dynamic, policy-driven gateway that directs traffic based on rules from the `Model Registry`.
 
-- **`CANDIDATE_MODEL_ID`**: The full ID of the model to be tested (e.g., `test_model:v2`). If this variable is not set or is empty, the shadow testing service will not be triggered.
+- **Implementation:** A dedicated lightweight service (e.g., FastAPI) or leveraging a service mesh sidecar (e.g., Istio, Linkerd).
+- **Dynamic Configuration:** Periodically polls the `Model Registry` for the current routing table (e.g., `{"model_A": {"production": "v3", "canary": "v4", "canary_percent": 5}}`). This allows for near-instant changes without redeployment.
+- **Health-Aware Routing:** Actively probes the health endpoints of all `InferenceService` instances. If a canary instance fails, the router will automatically divert traffic away from it, providing resilience.
 
-### 4.2. Worker Integration (`worker.py`)
+### 3.2. `ShadowingService`
 
-The `analyze_video` task in `src/video_ai_system/worker.py` will be modified as follows:
+This service decouples the `PipelineService` from the complexity of shadowing.
 
-```python
-# src/video_ai_system/worker.py (conceptual change)
+- **Logic:** It receives a fire-and-forget request from the router, calls the candidate model, and orchestrates the comparison. This keeps the main pipeline clean and focused on production delivery.
+- **Input:** `(video_id, request_data, production_model_version, candidate_model_version)`
+- **Output:** Triggers the `ComparisonService`.
 
-async def analyze_video(ctx, video_path: str, video_id: str):
-    # ... (existing setup)
-    inference_service = ctx["inference_service"]
-    shadow_testing_service = ctx["shadow_testing_service"]
-    config = ctx["config"]
+### 3.3. `ComparisonService` (V1: Foundational Metrics)
 
-    # 1. Run production inference
-    production_model_id = config.get('production_model_id', 'yolov8n:production')
-    prod_results, prod_latency = await inference_service.analyze(video_path, production_model_id)
+This service generates a comparison report. The initial version will focus on core stability and performance metrics, with the system designed to easily incorporate more advanced analysis in V2.
 
-    # ... (store production results)
+- **V1 Metrics Portfolio:**
+  - **Performance:** Latency (average, p95, p99), CPU/Memory/GPU usage.
+  - **Output Stability (Embeddings):** Cosine similarity between production and candidate embeddings. The service will calculate and log the distribution of similarity scores to catch significant shifts.
+  - **Error Rate:** Compares the rate of processing errors or exceptions between the two models.
+- **V2 (Future Enhancements):**
+  - **Semantic Equivalence:** Use a sentence-transformer model to calculate the semantic similarity score between generated text summaries.
+  - **Factual & Hallucination Check:** Count "new entities" in the candidate's summary that are not present in the production summary as a proxy for hallucination.
+  - **Safety & Bias:** Run both outputs through a standard toxicity/bias detection model.
+- **Report Generation:** The service will produce a structured JSON report that is stored in the Report Database for the Governance Dashboard to consume.
 
-    # 2. Trigger shadow testing if configured
-    candidate_model_id = config.get('candidate_model_id')
-    if candidate_model_id:
-        await shadow_testing_service.compare_and_log(
-            video_id=video_id,
-            production_model_id=production_model_id,
-            candidate_model_id=candidate_model_id,
-            production_results=prod_results,
-            production_latency=prod_latency,
-            video_path=video_path # Pass video_path for candidate inference
-        )
+### 3.4. `Model Registry` Integration
 
-    return {"status": "complete", "video_id": video_id}
-```
+The registry is the source of truth. Its schema will be extended to manage the deployment lifecycle.
 
-### 4.3. `ShadowTestingService`
+- **Key States:** `REGISTERED`, `SHADOWING`, `CANARY`, `PRODUCTION`, `ARCHIVED`.
+- **Metadata:** Each model version will store metadata including its current state, canary traffic percentage, and links to performance reports.
 
-A new service will be created at `src/video_ai_system/services/shadow_testing_service.py`.
+## 4. Governance & Promotion Workflow
 
-**Class Definition:**
+The model lifecycle will be managed as a state machine within the `Model Registry`, visualized and controlled by the Governance Dashboard.
 
-```python
-# src/video_ai_system/services/shadow_testing_service.py
+- **Automated Gating & Rollback:**
+  - **Shadowing -> Canary:** A promotion can be automatically triggered if a candidate meets a strict set of V1 criteria (e.g., `latency_increase < 5%`, `embedding_similarity > 0.98`).
+  - **Canary -> Production:** A progressive rollout will be automated. The system will automatically increase traffic (e.g., 1% -> 10% -> 50%) as long as KPIs remain stable. If a KPI is breached, an automated rollback to the previous stage occurs.
+- **Interactive Governance:** The dashboard will show a summary of comparison reports and provide clear "Promote" and "Reject" actions for manual oversight.
 
-import logging
-from typing import Dict, Any
+## 5. Configuration
 
-class ShadowTestingService:
-    def __init__(self, inference_service, logger: logging.Logger):
-        self.inference_service = inference_service
-        self.logger = logger
-
-    async def compare_and_log(
-        self,
-        video_id: str,
-        production_model_id: str,
-        candidate_model_id: str,
-        production_results: Dict[str, Any],
-        production_latency: float,
-        video_path: str
-    ):
-        """
-        Runs inference with a candidate model, compares its results to the
-        production model, and logs the comparison metrics.
-        """
-        # 1. Run candidate inference
-        cand_results, cand_latency = await self.inference_service.analyze(
-            video_path, candidate_model_id
-        )
-
-        # 2. Calculate comparison metrics
-        comparison_metrics = self._calculate_metrics(
-            production_results, cand_results
-        )
-
-        # 3. Structure and log the final result
-        log_payload = {
-            "message": "shadow_test_result",
-            "video_id": video_id,
-            "production_model_id": production_model_id,
-            "candidate_model_id": candidate_model_id,
-            "production_latency_ms": int(production_latency * 1000),
-            "candidate_latency_ms": int(cand_latency * 1000),
-            **comparison_metrics
-        }
-
-        self.logger.info(log_payload)
-
-    def _calculate_metrics(self, prod_res: Dict, cand_res: Dict) -> Dict:
-        # Implementation for calculating the rich set of metrics
-        # (detection counts, Jaccard similarity, unique classes, etc.)
-        # ...
-        return {
-            "detection_count_prod": len(prod_res.get("detections", [])),
-            "detection_count_cand": len(cand_res.get("detections", [])),
-            # ... other metrics
-        }
-```
-
-## 5. Data Schema for Logging
-
-The comparison results will be logged as a structured JSON object. This provides a flexible schema that can be queried effectively in Loki.
-
-**JSON Log Schema:**
+The following configuration will be added to the system's configuration schema.
 
 ```json
 {
-  "level": "info",
-  "message": "shadow_test_result",
-  "timestamp": "2025-06-25T18:30:00.123Z",
-  "video_id": "vid_abc123",
-  "production_model_id": "test_model:v1",
-  "candidate_model_id": "test_model:v2",
-  "production_latency_ms": 1250,
-  "candidate_latency_ms": 1420,
-  "detection_count_prod": 15,
-  "detection_count_cand": 18,
-  "class_jaccard_similarity": 0.85,
-  "classes_only_in_prod": ["bicycle"],
-  "classes_only_in_cand": ["scooter", "backpack"],
-  "avg_confidence_prod": 0.88,
-  "avg_confidence_cand": 0.86
+  "inference_router": {
+    "url": "http://inference-router:8000",
+    "config_poll_interval_seconds": 15
+  },
+  "shadow_testing": {
+    "comparison_service_url": "http://comparison-service:8002"
+  },
+  "canary_deployment": {
+    "auto_rollback_thresholds": {
+      "latency_increase_percent": 20,
+      "error_rate_increase_percent": 5
+    },
+    "auto_promote_thresholds": {
+      "latency_increase_percent": 5,
+      "embedding_similarity_min": 0.98
+    }
+  }
 }
 ```
 
-## 6. API Endpoint Design
+## 6. Validation Plan
 
-A new API endpoint will be created to retrieve shadow testing results. This endpoint will act as a proxy, querying the Loki backend and returning the results to the client.
-
-**Endpoint:** `GET /api/v1/shadow-testing/results`
-
-**Query Parameters:**
-
-- `candidate_model_id` (string, optional): Filter results for a specific candidate model.
-- `time_range` (string, optional): A time range string like `1h`, `24h`, `7d`. Defaults to `24h`.
-- `limit` (int, optional): The maximum number of log entries to return. Defaults to 100.
-
-**Example Request:**
-`GET /api/v1/shadow-testing/results?candidate_model_id=test_model:v2&time_range=7d`
-
-**Conceptual Implementation:**
-
-The API handler will construct a LogQL query based on the parameters and send it to the Loki API.
-
-```logql
-// Example LogQL query generated by the API
-{app="video-ai-system"} | json | message="shadow_test_result" and candidate_model_id="test_model:v2"
-```
-
-**Response Body:**
-
-The endpoint will return a JSON array of the log objects retrieved from Loki.
-
-```json
-[
-  {
-    "timestamp": "...",
-    "video_id": "...",
-    "production_model_id": "test_model:v1",
-    "candidate_model_id": "test_model:v2",
-    "metrics": {
-      "production_latency_ms": 1250,
-      "candidate_latency_ms": 1420,
-      "detection_count_prod": 15,
-      "detection_count_cand": 18,
-      "class_jaccard_similarity": 0.85
-      // ...
-    }
-  }
-  // ... other results
-]
-```
-
-## 7. Future Considerations
-
-### 7.1. Asynchronous Execution
-
-To improve throughput and resilience at scale, the shadow testing logic should be moved to a dedicated, low-priority ARQ queue.
-
-- **Trigger:** The `analyze_video` task would publish a `run_shadow_test` task instead of calling the service directly.
-- **Payload:** The task payload would include the `video_id`, `production_model_id`, `candidate_model_id`, and the `production_results`.
-- **Benefit:** This decouples the lifecycles, ensuring that the primary analysis is not blocked or affected by the shadow testing workload. This refactoring should be considered in a future phase focused on scaling and performance optimization.
-
-## 8. Cross-Mode Instructions
-
-- **For Code Mode:** Implement the `ShadowTestingService`, modify the `worker.py` task, and create the new API endpoint as specified in this document. Ensure unit tests are created for the service's metric calculation logic.
-- **For DevOps Mode:** The `CANDIDATE_MODEL_ID` environment variable needs to be added to the deployment configuration (e.g., `docker-compose.yml`, Kubernetes manifests). The value should be easily updatable to allow for testing different candidate models.
+- **Unit Tests:** Each service (`InferenceRouter`, `ShadowingService`, `ComparisonService`) will have comprehensive unit tests.
+- **Integration Tests:** A `docker-compose` environment will be used to test the full flow:
+  1. Set a model to `SHADOW` in the registry.
+  2. Send a video to the API.
+  3. Verify the `ComparisonService` generates a report.
+  4. Set a model to `CANARY`.
+  5. Verify the `InferenceRouter` splits traffic as expected.
+- **Chaos Tests:** Simulate failures in the canary `InferenceService` to ensure the `InferenceRouter` correctly diverts traffic and triggers rollback alerts.

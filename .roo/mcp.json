@@ -22,17 +22,22 @@
       "disabled": true,
       "alwaysAllow": []
     },
-    "exa": {
+    "context7": {
       "command": "npx",
       "args": [
         "-y",
-        "exa-mcp-server"
+        "@upstash/context7-mcp"
       ],
       "env": {
-        "EXA_API_KEY": "08b7ff0e-6839-4d02-96c7-3b7ee8b91a0e"
-      },
-      "disabled": true,
-      "alwaysAllow": []
+        "DEFAULT_MINIMUM_TOKENS": ""
+      }
+    },
+    "sequentialthinking": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-sequential-thinking"
+      ]
     }
   }
 }

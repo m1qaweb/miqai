@@ -1,154 +1,230 @@
-# Drift Detection Service Design
+# Drift Detection & Retraining Workflow Design
+
+**Version:** 2.0
+**Date:** 2025-06-30
+**Author:** Architect Mode
 
 ## 1. Overview
 
-This document outlines the design for the `DriftDetectionService`, a component responsible for detecting data drift by analyzing the distribution of feature embeddings over time. Data drift occurs when the statistical properties of the production data change, which can degrade model performance. This service provides a mechanism to detect such drift, enabling proactive model maintenance, such as retraining.
+This document outlines the end-to-end design for the Drift Detection and Automated Retraining workflow. The system provides a comprehensive mechanism to detect data and model drift, alert operators, provide governance oversight, and trigger model retraining with human-in-the-loop approval.
 
-The design is based on the principles described in the "Zero-Budget" guide, specifically using dimensionality reduction via Principal Component Analysis (PCA) and measuring the difference between embedding distributions with Kullback-Leibler (KL) divergence.
+This expanded design moves beyond on-demand checks to a fully automated, observable, and governable MLOps lifecycle component, as required for **Phase 2: Model Lifecycle Management & Governance**.
 
-## 2. Service Architecture
+### 1.1. High-Level Architecture
 
-### 2.1. `DriftDetectionService` Class
+The workflow integrates several components of the system to form a closed loop for model maintenance.
 
-The core of the drift detection mechanism will be encapsulated in the `DriftDetectionService` class.
+```mermaid
+graph TD
+    subgraph Data & Storage
+        QDRANT[(Qdrant DB)]
+        S3[(S3 Bucket for Retraining Data)]
+    end
 
-**Dependencies:**
+    subgraph Core Services
+        API(FastAPI Backend)
+        DDS(DriftDetectionService)
+        N8N(n8n Workflow Engine)
+    end
 
-- `VectorDBService`: To fetch embeddings from Qdrant.
-- `scikit-learn`: For PCA and KL divergence calculation.
+    subgraph Observability & Governance
+        PROM(Prometheus) --> ALERT(Alertmanager)
+        ALERT --> GRAFANA(Grafana Dashboard)
+        GRAFANA --> UI
+        UI(Governance Dashboard UI)
+    end
 
-**Class Structure:**
+    subgraph External Systems
+        RETRAIN(Retraining Pipeline e.g., SageMaker/Colab)
+    end
 
-```python
-# src/video_ai_system/services/drift_detection_service.py
-
-from sklearn.decomposition import PCA
-from sklearn.neighbors import KernelDensity
-import numpy as np
-from ..services.vector_db_service import VectorDBService
-
-class DriftDetectionService:
-    def __init__(self, vector_db_service: VectorDBService, pca_components: int = 10, drift_threshold: float = 0.1):
-        """
-        Initializes the DriftDetectionService.
-
-        Args:
-            vector_db_service (VectorDBService): An instance of the vector database service.
-            pca_components (int): The number of principal components to reduce to.
-            drift_threshold (float): The KL divergence value above which drift is considered detected.
-        """
-        self.vector_db_service = vector_db_service
-        self.pca = PCA(n_components=pca_components)
-        self.drift_threshold = drift_threshold
-
-    def _fetch_embeddings(self, start_time: str, end_time: str) -> np.ndarray:
-        """
-        Fetches embeddings from the vector database within a given time window.
-        (This assumes the VectorDBService will have a method to filter by timestamp)
-        """
-        # Implementation will query Qdrant using a time range filter
-        # This is a conceptual representation.
-        embeddings = self.vector_db_service.get_embeddings_by_timestamp(
-            start_ts=start_time,
-            end_ts=end_time
-        )
-        return np.array([emb.vector for emb in embeddings])
-
-    def _calculate_kl_divergence(self, p_samples: np.ndarray, q_samples: np.ndarray) -> float:
-        """
-        Calculates the KL divergence between two sets of samples after fitting a Kernel Density Estimator.
-        """
-        kde_p = KernelDensity(kernel='gaussian').fit(p_samples)
-        kde_q = KernelDensity(kernel='gaussian').fit(q_samples)
-
-        log_p = kde_p.score_samples(p_samples)
-        log_q = kde_q.score_samples(p_samples)
-
-        return np.mean(log_p - log_q)
-
-    def check_drift(self, start_time_ref: str, end_time_ref: str, start_time_comp: str, end_time_comp: str) -> dict:
-        """
-        Performs drift detection between a reference and a comparison time window.
-
-        Returns:
-            A dictionary containing the drift status and the KL divergence score.
-        """
-        # 1. Fetch embeddings for both periods
-        ref_embeddings = self._fetch_embeddings(start_time_ref, end_time_ref)
-        comp_embeddings = self._fetch_embeddings(start_time_comp, end_time_comp)
-
-        if ref_embeddings.shape[0] == 0 or comp_embeddings.shape[0] == 0:
-            return {"drift_detected": False, "kl_divergence": 0.0, "message": "Not enough data for comparison."}
-
-        # 2. Fit PCA on the reference data and transform both sets
-        ref_embeddings_pca = self.pca.fit_transform(ref_embeddings)
-        comp_embeddings_pca = self.pca.transform(comp_embeddings)
-
-        # 3. Calculate KL divergence
-        kl_divergence = self._calculate_kl_divergence(ref_embeddings_pca, comp_embeddings_pca)
-
-        # 4. Compare to threshold
-        drift_detected = kl_divergence > self.drift_threshold
-
-        return {
-            "drift_detected": drift_detected,
-            "kl_divergence": kl_divergence
-        }
+    N8N -- 1. Runs daily --> API
+    API -- 2. Calls --> DDS
+    DDS -- 3. Fetches embeddings --> QDRANT
+    DDS -- 4. Exposes metrics --> PROM
+    PROM -- 5. Scrapes --> DDS
+    ALERT -- 6. Fires alert on threshold --> GRAFANA
+    UI -- 7. Operator reviews drift --> API
+    API -- 8. Triggers retraining --> RETRAIN
+    API -- 9. Packages drifted data --> S3
+    RETRAIN -- 10. Pulls data --> S3
 ```
 
-### 2.2. Configuration
+**Workflow Steps:**
 
-The following parameters will be configurable:
+1.  **Scheduled Check (n8n)**: An n8n workflow runs on a daily schedule, calling the system's drift detection API.
+2.  **Drift Calculation (`DriftDetectionService`)**: The service fetches embedding vectors from Qdrant for a reference window (e.g., last week) and a comparison window (e.g., last 24 hours).
+3.  **Metrics Exposure**: The service calculates a drift score and exposes it as a Prometheus metric.
+4.  **Monitoring & Alerting (Prometheus)**: Prometheus scrapes the metric. If the drift score exceeds a predefined threshold, Alertmanager fires an alert.
+5.  **Visualization (Grafana)**: The alert is displayed on the Governance Dashboard, which includes Grafana panels showing drift over time.
+6.  **Human-in-the-Loop Review**: An operator reviews the drift event in the dashboard. The UI provides context, including the drift score and visualizations of the drifted data distributions.
+7.  **Retraining Trigger**: If the operator confirms the need for retraining, they click a button in the UI.
+8.  **Triggering External Pipeline**: This action calls a new `/retrain` API endpoint, which is responsible for initiating the external retraining pipeline (e.g., via a webhook).
+9.  **Data Packaging**: The backend packages a representative sample of the drifted data and uploads it to an S3 bucket.
+10. **Model Retraining**: The external pipeline is triggered, pulls the new data from S3, and begins the retraining process.
 
-- `pca_components`: Number of dimensions for PCA.
-- `drift_threshold`: KL divergence threshold for detecting drift.
+## 2. Drift Computation Logic
 
-These will be added to the application's configuration files (`development.json` and `config.schema.json`).
+The `DriftDetectionService` will be enhanced to support multiple drift detection methods and data types.
 
-## 3. API Endpoint Design
+### 2.1. Statistical Methods
 
-A new API endpoint will be exposed in `main.py` to trigger the drift detection check on demand.
+While the initial design proposed KL Divergence, we will make the system extensible to other methods.
 
-### `POST /drift-detection/check`
+- **Primary Method: Kullback-Leibler (KL) Divergence**:
 
-- **Description**: Triggers a drift detection analysis between two specified time windows.
-- **Request Body**:
+  - **How it works**: Measures the difference between two probability distributions. We first reduce embedding dimensionality with PCA, then use Kernel Density Estimation (KDE) to model the probability distribution of each data window before calculating the KL divergence.
+  - **Pros**: Fast to compute, sensitive to changes in the core probability mass.
+  - **Cons**: Can be unstable if distributions have regions with zero probability.
 
-```json
-{
-  "reference_window": {
-    "start_time": "2025-06-23T00:00:00Z",
-    "end_time": "2025-06-23T23:59:59Z"
-  },
-  "comparison_window": {
-    "start_time": "2025-06-24T00:00:00Z",
-    "end_time": "2025-06-24T23:59:59Z"
-  }
-}
+- **Alternative Method: Earth Mover's Distance (EMD)**:
+  - **How it works**: Measures the "work" required to transform one distribution into another. It is less sensitive to the exact shape and more to the distance between distributions.
+  - **Pros**: More robust than KL divergence, especially for high-dimensional data or when distributions don't overlap perfectly.
+  - **Cons**: More computationally expensive.
+  - **Action**: This will be a research task for **Project Research Mode** to evaluate its effectiveness on our data.
+
+### 2.2. Data Sources for Drift Analysis
+
+Drift will be calculated on two sources:
+
+1.  **Feature Embeddings**: The primary source, as described above. This detects **data drift**.
+2.  **Model Confidence Scores**: The distribution of the model's output confidence scores. This is a powerful and cheap proxy for **concept drift** (i.e., the model is becoming less certain about its predictions).
+
+## 3. Monitoring & Alerting
+
+The `DriftDetectionService` will expose metrics for Prometheus scraping.
+
+### 3.1. Prometheus Metrics
+
+The following metrics will be exposed via the `/metrics` endpoint (using `starlette-prometheus`):
+
+- `video_ai_drift_score`: A Gauge metric to store the latest drift score. It will have labels to distinguish the method and data source.
+  - `method`: "kl_divergence" or "emd"
+  - `source`: "embeddings" or "confidence_scores"
+- `video_ai_drift_check_duration_seconds`: A Histogram to track the latency of the drift check operation.
+- `video_ai_drift_detected_total`: A Counter that increments every time a drift check returns `drift_detected: true`.
+
+### 3.2. Prometheus Alerting Rules
+
+A rule file will be configured in Prometheus to trigger alerts.
+
+**`alert.rules.yml`:**
+
+```yaml
+groups:
+  - name: ModelDriftAlerts
+    rules:
+      - alert: HighDriftDetected
+        expr: video_ai_drift_score{method="kl_divergence", source="embeddings"} > 0.1
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "High data drift detected (value: {{ $value }})"
+          description: "The KL divergence between reference and comparison embedding distributions has exceeded the threshold of 0.1 for over an hour."
 ```
 
+## 4. Governance Dashboard & Retraining Workflow
+
+The existing frontend application will be extended with a "Model Governance" section.
+
+### 4.1. UI Design
+
+A new tab/view will be added to the React dashboard.
+
+```mermaid
+graph TD
+    subgraph "Governance Dashboard"
+        direction TB
+        A[Drift History Chart]
+        B[Drift Events List]
+        A --> B
+        B -- Selects Event --> C(Event Details)
+        C -- Click --> D(Trigger Retraining Button)
+    end
+```
+
+- **Drift History Chart**: An embedded Grafana panel showing the `video_ai_drift_score` over time.
+- **Drift Events List**: A table of all triggered `HighDriftDetected` alerts. This will be populated by a new API endpoint.
+  - **Columns**: Event ID, Timestamp, Drift Score, Status (e.g., `NEEDS_REVIEW`, `ACTIONED`, `IGNORED`).
+- **Trigger Retraining Button**: A button that becomes active when an operator selects an event with status `NEEDS_REVIEW`.
+
+### 4.2. New API Endpoints
+
+#### `GET /drift-events`
+
+- **Purpose**: Retrieve a list of all historical drift alerts for display in the Governance Dashboard.
+- **Implementation**: This endpoint will query a new simple database table or a dedicated log stream where alerts are persisted.
 - **Success Response (200 OK)**:
+  ```json
+  {
+    "events": [
+      {
+        "event_id": "evt_abc123",
+        "timestamp": "2025-06-30T10:00:00Z",
+        "drift_score": 0.18,
+        "status": "NEEDS_REVIEW",
+        "reference_window": { "start_time": "...", "end_time": "..." },
+        "comparison_window": { "start_time": "...", "end_time": "..." }
+      }
+    ]
+  }
+  ```
 
-```json
-{
-  "drift_detected": true,
-  "kl_divergence": 0.15
-}
-```
+#### `POST /retrain`
 
-- **Error Response (400 Bad Request)**: If time windows are invalid or missing.
-- **Error Response (500 Internal Server Error)**: If the analysis fails for an unexpected reason.
+- **Purpose**: To acknowledge a drift event and trigger the external retraining pipeline. This is the "human-in-the-loop" approval step.
+- **Request Body**:
+  ```json
+  {
+    "event_id": "evt_abc123",
+    "action": "TRIGGER_RETRAINING" // or "IGNORE"
+  }
+  ```
+- **Implementation Logic**:
+  1.  Validate the `event_id`.
+  2.  Update the event status in the database to `ACTIONED`.
+  3.  **Asynchronously**:
+      a. Fetch a representative sample of point IDs from the comparison window from Qdrant.
+      b. Package the corresponding data (e.g., video frames) into a `.zip` or `.tar.gz` file.
+      c. Upload the packaged data to a pre-configured S3 bucket (e.g., `s3://video-ai-retraining-data/batch-xyz.zip`).
+      d. Trigger the retraining pipeline by sending a `POST` request to a configured webhook URL, passing the S3 path as a parameter.
+- **Success Response (202 Accepted)**:
+  ```json
+  {
+    "status": "Retraining pipeline triggered successfully",
+    "retraining_job_id": "job-789"
+  }
+  ```
 
-## 4. Cross-Mode Instructions
+## 5. Assumptions & Fallbacks
+
+- **A2.1**: A persistent storage mechanism (e.g., a simple SQLite DB or a dedicated log file) is available for storing drift events. **Status**: pending. **Validation**: Confirm with DevOps.
+- **A2.2**: A pre-configured S3 bucket and credentials are provided for storing retraining data. **Status**: pending. **Validation**: Confirm with DevOps.
+- **A2.3**: The external retraining pipeline exposes a secure webhook URL that can be called by the API. **Status**: pending. **Validation**: Define contract with the team managing the training environment.
+- **F2.1**: If the retraining webhook fails, the system will retry up to 3 times with exponential backoff. If it still fails, the event status will be marked as `RETRAINING_FAILED` and an alert will be sent to the operations team.
+
+## 6. Cross-Mode Instructions
 
 - **To Code Mode**:
 
-  - Implement the `DriftDetectionService` in a new file: `src/video_ai_system/services/drift_detection_service.py`.
-  - Add `scikit-learn` to the project dependencies (`pyproject.toml` or `requirements.txt`).
-  - Implement the `POST /drift-detection/check` endpoint in `src/video_ai_system/main.py`.
-  - The `VectorDBService` will need a new method `get_embeddings_by_timestamp` that can filter points in Qdrant based on a timestamp payload key.
-  - Add configuration options for `pca_components` and `drift_threshold`.
+  1.  Update the `DriftDetectionService` to expose Prometheus metrics (`video_ai_drift_score`, etc.).
+  2.  Implement the new API endpoints: `GET /drift-events` and `POST /retrain`.
+  3.  Implement the asynchronous logic for packaging data and triggering the retraining webhook.
+  4.  In the `frontend` app, create the "Model Governance" view with the specified components.
+  5.  Add a simple persistence layer for drift events.
 
 - **To DevOps Mode**:
-  - Ensure the `scikit-learn` dependency is included in the Docker image.
-  - The new n8n workflow (detailed in `n8n_workflow_design.md`) will need to be deployed.
+
+  1.  Configure Prometheus with the `alert.rules.yml` for model drift.
+  2.  Configure Alertmanager to route `HighDriftDetected` alerts to the appropriate channel and potentially a webhook that writes to the drift events database.
+  3.  Provision the S3 bucket for retraining data and provide the necessary access credentials to the application.
+  4.  Manage the secret for the retraining pipeline's webhook URL.
+
+- **To Documentation Writer Mode**:
+
+  1.  Create a user guide for the "Model Governance" dashboard.
+  2.  Document the process for reviewing a drift event and triggering a retraining run.
+
+- **To Project Research Mode**:
+  1.  Initiate a research task to compare the performance and computational cost of KL Divergence vs. Earth Mover's Distance for detecting drift in our video embeddings.

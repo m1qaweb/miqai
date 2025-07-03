@@ -1,64 +1,42 @@
-secrets:
-  n8n_secure_cookie:
-    file: ./secrets/n8n_secure_cookie.txt
-
-volumes:
-  n8n_data:
-  qdrant_data:
-  shared_data:
-  models_data:
-
+networks:
+  video-ai-net:
+    driver: bridge
 services:
-  n8n:
-    image: n8nio/n8n:latest
-    restart: always
-    ports:
-      - "127.0.0.1:5678:5678"
-    volumes:
-      - n8n_data:/home/node/.n8n
-      - shared_data:/data
-    environment:
-      - N8N_SECURE_COOKIE_FILE=/run/secrets/n8n_secure_cookie
-    secrets:
-      - n8n_secure_cookie
-
-  qdrant:
-    image: qdrant/qdrant:latest
-    restart: always
-    volumes:
-      - qdrant_data:/qdrant/storage
-
-  redis:
-    image: redis:7-alpine
-    restart: always
-
   fastapi:
     build:
       context: .
-      dockerfile: Dockerfile
-    restart: always
+      dockerfile: ./src/api_gateway/Dockerfile
     ports:
-      - "127.0.0.1:8000:8000"
+      - "8000:8000"
+    environment:
+      - REDIS_DSN=redis://redis:6379/0
+      - API_KEY_SECRET_FILE=/run/secrets/api_key
     volumes:
-      - shared_data:/data
-      - models_data:/app/models
+      - ./secrets:/run/secrets
+      - ./src:/app
+    networks:
+      - video-ai-net
     depends_on:
-      - qdrant
       - redis
-    secrets:
-      - n8n_secure_cookie
+      - qdrant
 
-  worker:
+  orchestrator:
     build:
       context: .
-      dockerfile: Dockerfile
-    restart: always
-    command: ["arq", "video_ai_system.worker.WorkerSettings"]
+      dockerfile: ./src/orchestrator/Dockerfile
+    networks:
+      - video-ai-net
     depends_on:
       - redis
-      - qdrant
-    volumes:
-      - shared_data:/data
-      - models_data:/app/models
-    secrets:
-      - n8n_secure_cookie
+
+  redis:
+    image: "redis:7-alpine"
+    networks:
+      - video-ai-net
+
+  qdrant:
+    image: "qdrant/qdrant:latest"
+    ports:
+      - "6333:6333"
+    networks:
+      - video-ai-net

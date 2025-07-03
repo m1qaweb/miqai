@@ -51,9 +51,9 @@ class FramePoint(BaseModel):
 
 class VectorDBService:
     def __init__(self):
-        self.client = qdrant_client.QdrantClient(host=settings.QDRANT_HOST, port=settings.QDRANT_PORT)
-        self.collection_name = settings.QDRANT_COLLECTION
-        self.embedding_dim = settings.EMBEDDING_DIMENSION
+        self.client = qdrant_client.QdrantClient(host=settings.qdrant.host, port=settings.qdrant.port)
+        self.collection_name = settings.qdrant.collection
+        self.embedding_dim = settings.qdrant.embedding_dimension
 
     def initialize_collection(self):
         """

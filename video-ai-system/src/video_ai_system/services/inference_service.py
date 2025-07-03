@@ -25,7 +25,7 @@ class InferenceService:
                                         Defaults to None.
         """
         if model_path is None:
-            self.model_path = settings.model_path
+            self.model_path = settings.inference.model_path
         else:
             self.model_path = model_path
 
@@ -42,10 +42,11 @@ class InferenceService:
             # Get all output names. We assume the first is detections and the second is embeddings.
             self.output_names = [o.name for o in self.session.get_outputs()]
             if len(self.output_names) < 2:
-                raise RuntimeError(f"Model at {self.model_path} has fewer than 2 outputs. Cannot extract embeddings.")
+                logger.warning(f"Model at {self.model_path} has only {len(self.output_names)} output(s). Embeddings will not be available.")
+            else:
+                logger.info(f"Assuming '{self.output_names[0]}' is detections and '{self.output_names[1]}' is embeddings.")
 
             logger.info(f"Inference session created successfully. Using outputs: {self.output_names}")
-            logger.info(f"Assuming '{self.output_names[0]}' is detections and '{self.output_names[1]}' is embeddings.")
 
         except Exception as e:
             logger.exception(f"Failed to load ONNX model: {e}")
@@ -75,13 +76,15 @@ class InferenceService:
             results = self.session.run(self.output_names, {self.input_name: frames})
 
             detections = results[0]
-            embedding = results[1]
+            embedding = np.array([])  # Default empty embedding
 
-            # The embedding might be for the whole batch. Let's average it if it has a batch dimension.
-            # For many models, the embedding output might be (batch_size, embedding_dim, H, W).
-            # We can globally average pool it to get (batch_size, embedding_dim).
-            if embedding.ndim > 2 and embedding.shape[0] == frames.shape[0]:
-                embedding = np.mean(embedding, axis=(2, 3))
+            if len(results) > 1:
+                embedding = results[1]
+                # The embedding might be for the whole batch. Let's average it if it has a batch dimension.
+                # For many models, the embedding output might be (batch_size, embedding_dim, H, W).
+                # We can globally average pool it to get (batch_size, embedding_dim).
+                if embedding.ndim > 2 and embedding.shape[0] == frames.shape[0]:
+                    embedding = np.mean(embedding, axis=(2, 3))
 
             logger.info(f"Inference successful. Detections shape: {detections.shape}, Embeddings shape: {embedding.shape}")
 
