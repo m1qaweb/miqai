@@ -1,0 +1,33 @@
+# schemaVersion: 1.0
+identity:
+  name: "acme-corp-ppe-detector"
+  version: "1.2.3" # Must follow Semantic Versioning (SemVer 2.0.0)
+  author: "ACME Corporation <security@acme.corp>"
+  description: "Detects Personal Protective Equipment (PPE) in video frames."
+
+securityContext:
+  # Defines the plugin's trust tier and isolation level.
+  # Options: 'community' (WASM), 'partner' (gVisor), 'core' (container)
+  trustTier: "community"
+
+  # Explicitly requested permissions. Denied by default.
+  permissions:
+    # Grants access to the brokered inference service for a specific model.
+    - type: "inference:run"
+      model: "yolov8n-ppe:v1.0.0"
+    # Allows egress network traffic to a specific domain.
+    - type: "network:egress"
+      target: "https://api.acme.corp/telemetry"
+
+  # Resource limits enforced by the sandbox runtime.
+  resourceLimits:
+    cpu: "500m" # 0.5 vCPU
+    memory: "256Mi" # 256 Megabytes
+    executionTimeout: "30s" # Max execution time per invocation
+
+build:
+  # Specifies the language and version for the build environment.
+  language: "rust"
+  version: "1.78"
+  # Main entry point for the plugin source code.
+  entrypoint: "src/lib.rs"

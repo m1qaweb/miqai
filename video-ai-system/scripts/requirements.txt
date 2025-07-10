@@ -1,6 +1,0 @@
-# Video AI System Requirements
-mmcv==2.1.0
-mmaction2==0.25.0
-timm
-einops
-decord
