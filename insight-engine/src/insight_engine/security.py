@@ -1,44 +1,58 @@
-import logging
-from fastapi import HTTPException, Security
-from fastapi.security import APIKeyHeader
-from starlette.status import HTTP_401_UNAUTHORIZED
+import os
+from datetime import datetime, timedelta
+from typing import Optional
+
+from fastapi import Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordBearer
+from jose import JWTError, jwt
+from pydantic import BaseModel
 
 from insight_engine.config import settings
 
-API_KEY_HEADER = "X-API-Key"
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
-api_key_header = APIKeyHeader(name=API_KEY_HEADER, auto_error=False)
+class TokenData(BaseModel):
+    username: Optional[str] = None
 
-logger = logging.getLogger(__name__)
-
-
-async def get_api_key(api_key_header: str = Security(api_key_header)):
+def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     """
-    Dependency to validate the API key from the request header.
-
-    Args:
-        api_key_header: The API key passed in the 'X-API-Key' header.
-
-    Raises:
-        HTTPException: If the API key is missing or invalid.
-
-    Returns:
-        The validated API key.
+    Creates a new JWT access token.
     """
-    if not settings.api_key:
-        logger.critical(
-            "API key is not configured on the server. Denying all requests."
-        )
-        raise HTTPException(
-            status_code=HTTP_401_UNAUTHORIZED,
-            detail="Could not validate credentials: API key not configured.",
-        )
-
-    if api_key_header == settings.api_key:
-        return api_key_header
+    to_encode = data.copy()
+    if expires_delta:
+        expire = datetime.utcnow() + expires_delta
     else:
-        logger.warning("Invalid API key received.")
-        raise HTTPException(
-            status_code=HTTP_401_UNAUTHORIZED,
-            detail="Could not validate credentials: Invalid API key.",
-        )
+        expire = datetime.utcnow() + timedelta(minutes=15)
+    to_encode.update({"exp": expire})
+    encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+    return encoded_jwt
+
+def verify_token(token: str = Depends(oauth2_scheme)) -> str:
+    """
+    Verifies the JWT token and returns the username.
+    """
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    try:
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+        username = payload.get("sub")
+        if username is None:
+            raise credentials_exception
+        # TODO: In a real application, you would also validate the user exists in the database.
+        # For this task, we'll assume the username in the token is the user identifier.
+        return str(username)
+    except JWTError:
+        raise credentials_exception
+
+async def get_current_user(token: str = Depends(oauth2_scheme)):
+    """
+    Dependency to get the current user from the token.
+    This is a placeholder for a more complete user model retrieval.
+    """
+    username = verify_token(token)
+    # In a real app, you'd fetch a user model from the DB here.
+    # For now, the username (user_id) is sufficient.
+    return {"username": username}

@@ -1,89 +1,43 @@
+[tool.poetry]
+name = "insight-engine"
+version = "0.1.0"
+description = "AI-powered video analysis platform"
+authors = ["Your Name <you@example.com>"]
+
+packages = [{include = "insight_engine", from = "src"}]
+
+[tool.poetry.dependencies]
+python = "^3.10"
+fastapi = "0.115.13"
+uvicorn = "0.34.3"
+google-cloud-storage = "^2.14.0"
+google-cloud-speech = "^2.22.0"
+google-cloud-videointelligence = "^2.12.0"
+pydantic = "^2.5.3"
+arq = "^0.25.0"
+qdrant-client = "^1.7.3"
+langchain = "0.3.26"
+langchain-google-genai = "^2.1.7"
+langchain-community = "0.3.27"
+langchain-core = "0.3.68"
+packaging = "24.2"
+httpx = "0.28.1"
+scikit-learn = "1.5.1"
+psutil = "6.0.0"
+google-cloud-pubsub = "^2.13.0"
+opentelemetry-sdk = "1.24.0"
+opentelemetry-semantic-conventions = "0.45b0"
+pyyaml = "6.0.2"
+mlflow = "^2.10.0"
+google-cloud-dlp = "^3.12.0"
+ffmpeg-python = "^0.2.0"
+python-jose = {extras = ["cryptography"], version = "^3.3.0"}
+redis = "^5.0.1"
+google-cloud-secret-manager = "^2.16.0"
+google-cloud-core = "^2.3.2"
+bleach = "^6.0.0"
+
+
 [build-system]
-requires = ["setuptools>=61.0"]
-build-backend = "setuptools.build_meta"
-
-[project]
-name = "insight_engine"
-version = "1.0.0"
-description = "A unified, multi-modal AI video analysis platform."
-readme = "README.md"
-requires-python = ">=3.11"
-classifiers = [
-    "Programming Language :: Python :: 3",
-    "License :: OSI Approved :: MIT License",
-    "Operating System :: OS Independent",
-]
-dependencies = [
-    # Core application dependencies
-    "opencv-python==4.11.0.86",
-    "psutil==5.9.8",
-    "numpy==1.26.4",
-    "loguru==0.7.2",
-    "scikit-learn==1.5.0",
-    "imagehash==4.3.1",
-    "Pillow==10.3.0",
-
-    # API and Web
-    "requests==2.32.3",
-    "httpx==0.27.0",
-    "fastapi==0.115.14",
-    "uvicorn==0.35.0",
-
-    # Observability
-    "prometheus-client==0.20.0",
-    "prometheus-api-client",
-    "opentelemetry-sdk",
-    "opentelemetry-exporter-otlp",
-    "prometheus-fastapi-instrumentator==7.1.0",
-    "opentelemetry-instrumentation-fastapi",
-
-    # Data Persistence and Caching
-    "redis==5.0.7",
-    "filelock",
-    "qdrant-client==1.7.3",
-
-    # Configuration
-    "python-dotenv==1.1.1",
-    "pyyaml==6.0.1",
-    "pydantic-settings",
-
-    # ML & AI
-    "onnxruntime==1.22.0",
-    "ultralytics",
-    "onnx==1.18.0",
-    "neural_compressor==3.4.1",
-    "imageio==2.37.0",
-    "olive-ai==0.9.1",
-    "langchain==0.3.26",
-    "langchain-google-genai==2.1.7",
-    "langchain-community==0.3.27",
-    "langchain-openai",
-    "openai",
-    "tiktoken",
-
-    # Task Queue
-    "arq==0.26.3",
-
-    # AWS
-    "boto3==1.39.2",
-
-    # Google API
-    "google-api-python-client",
-    "google-auth-oauthlib",
-    "google-auth-httplib2",
-    "google-cloud-storage",
-    "google-cloud-speech",
-    "google-cloud-vision",
-    "google-cloud-aiplatform",
-    "asgi-lifespan",
-    "ffmpeg-python==0.2.0",
-]
-
-[project.optional-dependencies]
-dev = [
-    "black",
-    "ruff",
-]
-
-[tool.setuptools.packages.find]
-where = ["src"]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

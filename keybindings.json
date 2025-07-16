@@ -1,0 +1,9 @@
+[
+    {
+      "key": "ctrl+alt+a",
+      "command": "workbench.action.tasks.runTask",
+      "args": "AI Agentic Code",
+      "when": "editorTextFocus"
+    }
+  ]
+  

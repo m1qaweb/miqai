@@ -98,27 +98,23 @@ class Settings(BaseSettings):
     )
 
     # --- Security ---
-    API_KEY_SECRET_FILE: str = "video-ai-system/secrets/api_key.txt"
+    SECRET_KEY: str  # IMPORTANT: Load from env var in production
+    ALGORITHM: str = "HS256"
     VIDEO_AI_API_KEY: Optional[str] = None
     BRAVE_API_KEY: Optional[str] = None
     AZURE_OPENAI_KEY: Optional[str] = None
-
+    GCP_PROJECT_ID: Optional[str] = None
+    
     @computed_field
     @property
     def api_key(self) -> Optional[str]:
-        if not self.API_KEY_SECRET_FILE:
-            return None
-        try:
-            with open(self.API_KEY_SECRET_FILE, "r") as f:
-                return f.read().strip()
-        except FileNotFoundError:
-            logger.error(
-                f"API key secret file not found at: {self.API_KEY_SECRET_FILE}"
-            )
-            return None
+        if self.VIDEO_AI_API_KEY:
+            return self.VIDEO_AI_API_KEY
+        logger.warning("VIDEO_AI_API_KEY environment variable not set.")
+        return None
 
     # Redis DSN for ARQ task queue
-    REDIS_DSN: RedisDsn = "redis://localhost:6379/0"
+    REDIS_DSN: RedisDsn = Field(default=RedisDsn("redis://localhost:6379/0"))
 
     # --- Data and Model Paths ---
     MODEL_REGISTRY_PATH: str = "models/registry.json"

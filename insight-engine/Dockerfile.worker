@@ -1,0 +1,40 @@
+# --- Base Stage ---
+# Use a slim Python image for a smaller footprint.
+# Pinning the version ensures reproducible builds.
+FROM python:3.10-slim
+
+# --- System Dependencies ---
+# Install ffmpeg, which is required by the worker for video processing.
+# Using `apt-get` is standard for Debian-based images like python:slim.
+# `no-install-recommends` avoids installing unnecessary packages.
+# Clean up the apt cache to keep the image size down.
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends ffmpeg && \
+    rm -rf /var/lib/apt/lists/*
+
+# --- Python Dependencies ---
+# Set the working directory inside the container.
+WORKDIR /app
+
+# Copy only the dependency manifests first to leverage Docker's layer caching.
+# This layer will only be rebuilt if pyproject.toml or poetry.lock changes.
+COPY pyproject.toml poetry.lock* ./
+
+# Install poetry and then the project dependencies.
+# `--no-root` installs only the dependencies, not the project itself.
+# `--no-dev` skips development dependencies, crucial for a lean production image.
+RUN pip install poetry==1.8.2 && \
+    poetry config virtualenvs.create false && \
+    poetry install --no-root --no-dev
+
+# --- Application Code ---
+# Copy the application source code into the container.
+COPY ./src /app/src
+
+# --- Runtime ---
+# Set the PYTHONPATH to include the source directory.
+ENV PYTHONPATH=/app
+
+# The command to run when the container starts.
+# This executes the worker script, which will begin listening for Pub/Sub messages.
+CMD ["python", "-m", "src.insight_engine.worker"]

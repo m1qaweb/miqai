@@ -1,0 +1,53 @@
+services:
+  api:
+    build:
+      context: .
+    ports:
+      - "8000:8000"
+    command: "uvicorn src.insight_engine.main:app --host 0.0.0.0 --port 8000 --reload"
+    env_file:
+      - .env
+    environment:
+      - REDIS_HOST=redis
+      - API_KEY=test-key # For local development only
+    depends_on:
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+
+  redis:
+    image: "redis:alpine"
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 1s
+      timeout: 3s
+      retries: 30
+
+  qdrant:
+    image: "qdrant/qdrant:latest"
+    ports:
+      - "6333:6333"
+    volumes:
+      - ./qdrant_storage:/qdrant/storage
+
+  indexer:
+    build:
+      context: .
+    command: tail -f /dev/null
+    volumes:
+      - .:/app
+    depends_on:
+      - qdrant
+
+  worker:
+    build:
+      context: .
+    command: "arq src.insight_engine.worker.WorkerSettings"
+    environment:
+      - REDIS_HOST=redis
+    depends_on:
+      redis:
+        condition: service_healthy

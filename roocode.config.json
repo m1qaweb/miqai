@@ -1,0 +1,11 @@
+{
+    "tools": {
+      "ai-agent": {
+        "command": "/home/youruser/.ai-agent/roocode-copilot.sh",
+        "args": ["${inputFile}", "${cursorOffset}"],
+        "timeout": 900000,
+        "description": "Scaffold → Fill → Test → Auto‑fix via Roo + Copilot"
+      }
+    }
+  }
+  

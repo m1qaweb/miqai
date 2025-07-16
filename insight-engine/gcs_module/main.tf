@@ -1,62 +1,72 @@
-# This terraform block configures the GCS backend for storing the terraform state remotely.
-# Using a remote backend is a best practice for teams to ensure that everyone is working
-# with the same state and to prevent conflicts. State locking is enabled to prevent
-# concurrent state operations, which can lead to corruption.
-terraform {
-  backend "gcs" {
-    bucket = "your-tfstate-bucket-name" # This will be parameterized later
-    prefix = "terraform/state"
-  }
-}
-
-# Creates the GCS bucket that will be used to store the remote terraform state.
-# Versioning is enabled as a security measure to protect against accidental deletions
-# or overwrites of the state file. It allows for the recovery of previous state versions.
-resource "google_storage_bucket" "tfstate" {
-  name          = var.tfstate_bucket_name
+# ------------------------------------------------------------------------------
+# GCS BUCKET FOR VIDEO INGESTION
+# ------------------------------------------------------------------------------
+resource "google_storage_bucket" "ingestion_bucket" {
+  # Naming the bucket using the variable defined in variables.tf.
+  # Bucket names must be globally unique.
+  name          = var.ingestion_bucket_name
   project       = var.project_id
   location      = var.location
-  force_destroy = false # Set to true to allow deletion of non-empty buckets
+  storage_class = "STANDARD"
 
+  # Enable versioning to protect against accidental overwrites or deletions.
+  # This keeps a history of objects, allowing for recovery.
   versioning {
     enabled = true
   }
 
-  # Uniform bucket-level access is enabled to simplify access control.
-  uniform_bucket_level_access = true
-}
-
-# Creates the GCS bucket for video uploads.
-# Versioning is enabled to protect against accidental data loss.
-# The lifecycle rule automatically deletes objects after 30 days to manage costs.
-resource "google_storage_bucket" "video_uploads" {
-  name          = var.video_upload_bucket_name
-  project       = var.project_id
-  location      = var.location
-  force_destroy = false
-
-  versioning {
-    enabled = true
-  }
-
+  # A lifecycle rule to manage object versions and control costs.
+  # This rule will automatically delete objects after 30 days.
   lifecycle_rule {
-    condition {
-      age = 30 # days
-    }
     action {
       type = "Delete"
     }
+    condition {
+      age = 30 # Days
+    }
   }
 
+  # Enforce uniform bucket-level access to simplify permissions management.
+  # This disables object-level ACLs and ensures that only bucket-level IAM
+  # policies grant access to objects.
   uniform_bucket_level_access = true
 }
 
-# This resource grants the specified service account the 'Storage Object Creator' role
-# on the video upload bucket. This follows the principle of least privilege by only
-# granting the necessary permissions for the service account to upload objects,
-# without giving it broader permissions like deletion or ownership.
-resource "google_storage_bucket_iam_member" "uploader" {
-  bucket = google_storage_bucket.video_uploads.name
-  role   = "roles/storage.objectCreator"
-  member = "serviceAccount:${var.uploader_service_account_email}"
+# ------------------------------------------------------------------------------
+# GCS BUCKET FOR TERRAFORM REMOTE STATE
+# ------------------------------------------------------------------------------
+resource "google_storage_bucket" "tfstate" {
+  # Naming the bucket for Terraform state storage.
+  name          = var.tfstate_bucket_name
+  project       = var.project_id
+  location      = var.location
+  storage_class = "STANDARD"
+
+  # Enable versioning to keep a history of the infrastructure's state files.
+  # This is critical for auditing changes and recovering previous states.
+  versioning {
+    enabled = true
+  }
+
+  # A lifecycle rule to clean up old, noncurrent state file versions.
+  # This helps manage storage costs by deleting historical versions after 30 days.
+  lifecycle_rule {
+    action {
+      type = "Delete"
+    }
+    condition {
+      num_newer_versions = 10 # Keep at least 10 newer versions
+      with_state         = "ANY"
+    }
+  }
+
+  # Prevent accidental deletion of the Terraform state bucket.
+  # This is a critical safeguard to avoid losing the infrastructure state,
+  # which would orphan all managed resources.
+  lifecycle {
+    prevent_destroy = true
+  }
+
+  # Enforce uniform bucket-level access for consistent and secure IAM.
+  uniform_bucket_level_access = true
 }

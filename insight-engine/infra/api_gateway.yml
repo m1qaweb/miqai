@@ -1,0 +1,68 @@
+# OpenAPI 3.0 specification for The Insight Engine API Gateway
+swagger: '2.0'
+info:
+  title: 'The Insight Engine API'
+  description: 'API Gateway for The Insight Engine backend services.'
+  version: '1.0.0'
+schemes:
+  - 'https'
+produces:
+  - 'application/json'
+paths:
+  '/v1/{proxy+}':
+    x-google-backend:
+      address: 'https://api-orchestrator-v2-SERVICE_URL' # Placeholder, will be replaced by Terraform
+      path_translation: 'APPEND_PATH_TO_ADDRESS'
+      deadline: 60 # seconds
+    options:
+      operationId: 'cors-preflight'
+      responses:
+        '204':
+          description: 'CORS Preflight'
+          headers:
+            Access-Control-Allow-Origin:
+              type: 'string'
+            Access-Control-Allow-Methods:
+              type: 'string'
+            Access-Control-Allow-Headers:
+              type: 'string'
+            Access-Control-Max-Age:
+              type: 'string'
+    get: &proxy_operation
+      summary: 'Proxy for all GET requests'
+      operationId: 'proxy-get'
+      security:
+        - api_key: []
+      responses:
+        '200':
+          description: 'Success'
+    post: &proxy_operation_post
+      summary: 'Proxy for all POST requests'
+      operationId: 'proxy-post'
+      security:
+        - api_key: []
+      responses:
+        '200':
+          description: 'Success'
+    put: &proxy_operation_put
+      summary: 'Proxy for all PUT requests'
+      operationId: 'proxy-put'
+      security:
+        - api_key: []
+      responses:
+        '200':
+          description: 'Success'
+    delete: &proxy_operation_delete
+      summary: 'Proxy for all DELETE requests'
+      operationId: 'proxy-delete'
+      security:
+        - api_key: []
+      responses:
+        '200':
+          description: 'Success'
+
+securityDefinitions:
+  api_key:
+    type: 'apiKey'
+    name: 'x-api-key'
+    in: 'header'

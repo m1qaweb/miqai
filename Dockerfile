@@ -1,41 +1,34 @@
-# Builder for frontend
-FROM node:20-slim AS builder
-WORKDIR /app/frontend
-COPY frontend/package.json frontend/package-lock.json* ./
-RUN npm install
-COPY frontend/ ./
-RUN npm run build
+# Stage 1: Builder stage to install dependencies
+FROM python:3.10-slim as builder
 
-# Main Python app image
-FROM python:3.11-slim AS fastapi
-WORKDIR /home/appuser/app
+WORKDIR /app
 
-# Create user
-RUN useradd --create-home appuser
+# Install poetry
+RUN pip install poetry
+ENV PATH="/root/.local/bin:$PATH"
 
-# Copy only dependency files first for better caching
-COPY pyproject.toml ./
+# Copy only the files needed for dependency installation
+COPY pyproject.toml poetry.lock* ./
 
-# Install dependencies (including opentelemetry-instrumentation-fastapi)
-RUN pip install --no-cache-dir ".[dev]" && \
-    pip install opentelemetry-instrumentation-fastapi && \
-    pip list && pip show opentelemetry-instrumentation-fastapi
+# Install dependencies into a virtual environment
+RUN poetry install --no-dev --no-interaction --no-ansi
 
-# Copy app code
-COPY ./src /home/appuser/app/src
+# Stage 2: Final stage for the production image
+FROM python:3.10-slim
 
-# Copy frontend build
-COPY --from=builder /app/frontend/build /home/appuser/app/static
+WORKDIR /app
 
-# Copy entrypoint
-COPY entrypoint.sh /home/appuser/app/entrypoint.sh
-RUN chmod +x /home/appuser/app/entrypoint.sh
+# Copy the virtual environment from the builder stage
+COPY --from=builder /app/.venv /.venv
 
-# Set permissions
-RUN chown -R appuser:appuser /home/appuser/app
+# Activate the virtual environment
+ENV PATH="/app/.venv/bin:$PATH"
 
-USER appuser
+# Copy the application source code
+COPY ./src/insight_engine ./src/insight_engine
 
-ENV PYTHONPATH=/home/appuser/app/src
+# Expose the port the app runs on
+EXPOSE 8000
 
-CMD ["/home/appuser/app/entrypoint.sh"]
+# Command to run the application
+CMD ["uvicorn", "src.insight_engine.main:app", "--host", "0.0.0.0", "--port", "8000"]

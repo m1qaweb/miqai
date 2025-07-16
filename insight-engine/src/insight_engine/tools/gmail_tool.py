@@ -4,6 +4,7 @@ import os.path
 import sys
 from pathlib import Path
 import base64
+import json
 from email.mime.text import MIMEText
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
@@ -17,8 +18,6 @@ from agents.models import EmailDraft
 
 # If modifying these scopes, delete the file token.json.
 SCOPES = ["https://www.googleapis.com/auth/gmail.compose"]
-CREDENTIALS_FILE = "credentials/credentials.json"
-TOKEN_FILE = "credentials/token.json"
 
 
 def get_gmail_service():
@@ -26,26 +25,39 @@ def get_gmail_service():
     Lists the user's Gmail labels.
     """
     creds = None
-    if os.path.exists(TOKEN_FILE):
+    
+    # Load token from environment variable
+    token_json = os.environ.get("GMAIL_TOKEN_JSON")
+    if token_json:
         try:
-            creds = Credentials.from_authorized_user_file(TOKEN_FILE, SCOPES)
-        except ValueError:
+            creds_data = json.loads(token_json)
+            creds = Credentials.from_authorized_user_info(creds_data, SCOPES)
+        except (json.JSONDecodeError, ValueError):
             creds = None
 
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
             creds.refresh(Request())
         else:
-            if not os.path.exists(CREDENTIALS_FILE):
-                raise FileNotFoundError(
-                    f"'{CREDENTIALS_FILE}' not found. Please download your "
-                    "OAuth 2.0 client secrets file from the Google Cloud "
-                    "Console and save it in the 'credentials' directory."
+            # Load credentials from environment variable
+            creds_json = os.environ.get("GMAIL_CREDENTIALS_JSON")
+            if not creds_json:
+                raise ValueError(
+                    "Missing GMAIL_CREDENTIALS_JSON environment variable. Please set it with your "
+                    "OAuth 2.0 client secrets."
                 )
-            flow = InstalledAppFlow.from_client_secrets_file(CREDENTIALS_FILE, SCOPES)
-            creds = flow.run_local_server(host="127.0.0.1", port=8080)
-        with open(TOKEN_FILE, "w") as token:
-            token.write(creds.to_json())
+            
+            try:
+                creds_data = json.loads(creds_json)
+                flow = InstalledAppFlow.from_client_config(creds_data, SCOPES)
+                creds = flow.run_local_server(host="127.0.0.1", port=8080)
+            except (json.JSONDecodeError, KeyError):
+                 raise ValueError(
+                    "Invalid format for GMAIL_CREDENTIALS_JSON. Please ensure it's a valid JSON."
+                )
+
+        # Save the new token to an environment variable (for subsequent runs)
+        os.environ["GMAIL_TOKEN_JSON"] = creds.to_json()
 
     return build("gmail", "v1", credentials=creds)
 

@@ -1,0 +1,17 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+      {
+        "label": "AI Agentic Code",
+        "type": "shell",
+        "command": "roocode run --tool ai-agent --file ${file} --cursor ${cursorOffset}",
+        "problemMatcher": [],
+        "group": "build",
+        "presentation": {
+          "reveal": "always",
+          "panel": "shared"
+        }
+      }
+    ]
+  }
+  

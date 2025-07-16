@@ -30,9 +30,12 @@ def generate_clips(
     Raises:
         ClipGenerationError: If the video file does not exist or if ffmpeg fails.
     """
-    video_file = Path(video_path)
+    # Sanitize the video path to prevent path traversal attacks
+    safe_filename = os.path.basename(video_path)
+    video_file = Path(safe_filename)
+
     if not video_file.exists():
-        raise ClipGenerationError(f"Video file not found: {video_path}")
+        raise ClipGenerationError(f"Video file not found: {safe_filename}")
 
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)

@@ -1,16 +1,17 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
+import DOMPurify from "dompurify";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useStore } from "@/lib/store";
 
 interface SummarizationDisplayProps {
   videoUri: string;
 }
 
 export const SummarizationDisplay: React.FC<SummarizationDisplayProps> = ({ videoUri }) => {
-  const [summary, setSummary] = useState("");
-  const [isStreaming, setIsStreaming] = useState(false);
+  const { summary, setSummary, isStreaming, setIsStreaming } = useStore();
   const [error, setError] = useState<string | null>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
 
@@ -37,7 +38,7 @@ export const SummarizationDisplay: React.FC<SummarizationDisplayProps> = ({ vide
                 setIsStreaming(false);
                 eventSource.close();
             } else if (message.chunk) {
-                setSummary((prevSummary) => prevSummary + message.chunk);
+                setSummary(summary + message.chunk);
             }
         } catch (e) {
             // Handle cases where the final message might not be JSON
@@ -82,10 +83,12 @@ export const SummarizationDisplay: React.FC<SummarizationDisplayProps> = ({ vide
             <CardTitle>Live Summary</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-sm text-muted-foreground whitespace-pre-wrap">
-                {summary}
-                {isStreaming && <span className="animate-pulse">...</span>}
-            </p>
+            <div
+              className="text-sm text-muted-foreground whitespace-pre-wrap"
+              dangerouslySetInnerHTML={{
+                __html: DOMPurify.sanitize(summary + (isStreaming ? '<span class="animate-pulse">...</span>' : "")),
+              }}
+            />
           </CardContent>
         </Card>
       )}

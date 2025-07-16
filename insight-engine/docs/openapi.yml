@@ -1,0 +1,148 @@
+openapi: 3.0.0
+info:
+  title: "The Insight Engine API"
+  version: "1.0.0"
+  description: "API for video analysis, summarization, and clip extraction."
+
+paths:
+  /v1/upload:
+    post:
+      summary: "Initiate Video Upload"
+      description: "Signals the intent to upload a video, returning a signed URL for the client to use."
+      operationId: "initiateVideoUpload"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VideoUploadRequest'
+      responses:
+        '202':
+          description: "Upload process accepted. The response should contain the signed URL."
+        '422':
+          description: "Validation Error. The request body is malformed."
+
+  /v1/summarize:
+    post:
+      summary: "Get Video Summarization Stream"
+      description: "Starts a Server-Sent Events (SSE) stream to deliver the video summarization based on a query."
+      operationId: "getVideoSummarization"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SummarizationRequest'
+      responses:
+        '200':
+          description: "Successful summarization stream."
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                example: "data: This is a summary fragment.\n\n"
+        '422':
+          description: "Validation Error."
+        '503':
+          description: "Service Unavailable. The summarization service may be overloaded or down."
+
+  /v1/clips:
+    post:
+      summary: "Extract Object Clips"
+      description: "Requests the extraction of video clips containing a specific object or action."
+      operationId: "extractClips"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ClipRequest'
+      responses:
+        '200':
+          description: "Successfully extracted clips."
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ClipResult'
+        '422':
+          description: "Validation Error."
+        '503':
+          description: "Service Unavailable. The clip extraction service may be overloaded or down."
+
+components:
+  schemas:
+    VideoUploadRequest:
+      type: object
+      title: "VideoUploadRequest"
+      properties:
+        file_name:
+          type: string
+          description: "The name of the video file to be uploaded."
+          example: "meeting_recording.mp4"
+        content_type:
+          type: string
+          description: "The MIME type of the video file."
+          example: "video/mp4"
+      required:
+        - file_name
+        - content_type
+
+    SummarizationRequest:
+      type: object
+      title: "SummarizationRequest"
+      properties:
+        video_id:
+          type: string
+          format: uuid
+          description: "The unique identifier of the uploaded video."
+        query:
+          type: string
+          description: "The user's query for summarization."
+          example: "What were the key decisions made in the meeting?"
+      required:
+        - video_id
+        - query
+
+    ClipRequest:
+      type: object
+      title: "ClipRequest"
+      properties:
+        video_id:
+          type: string
+          format: uuid
+          description: "The unique identifier of the uploaded video."
+        object_query:
+          type: string
+          description: "The object or action to search for in the video."
+          example: "Find all clips where a whiteboard is visible."
+      required:
+        - video_id
+        - object_query
+
+    ClipResult:
+      type: object
+      title: "ClipResult"
+      properties:
+        clip_id:
+          type: string
+          format: uuid
+          description: "Unique identifier for the extracted clip."
+        gcs_url:
+          type: string
+          format: uri
+          description: "Publicly accessible URL to the clip in Google Cloud Storage."
+        start_time:
+          type: number
+          format: float
+          description: "Start time of the clip in seconds from the beginning of the video."
+        end_time:
+          type: number
+          format: float
+          description: "End time of the clip in seconds from the beginning of the video."
+      required:
+        - clip_id
+        - gcs_url
+        - start_time
+        - end_time

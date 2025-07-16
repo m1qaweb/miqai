@@ -57,11 +57,4 @@ resource "google_cloud_run_v2_service" "default" {
   }
 }
 
-# Allow unauthenticated access to the service
-resource "google_cloud_run_v2_service_iam_member" "noauth" {
-  project  = google_cloud_run_v2_service.default.project
-  location = google_cloud_run_v2_service.default.location
-  name     = google_cloud_run_v2_service.default.name
-  role     = "roles/run.invoker"
-  member   = "allUsers"
-}
+# Access is restricted, authentication is required.

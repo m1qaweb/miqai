@@ -1,62 +1,22 @@
-import asyncio
 import os
+import json
+import requests
 
-import functions_framework
-import structlog
-from cloudevents.http import CloudEvent
-from insight_engine.services.multimodal_extractor import extract_multimodal_data
-
-# Configure structured logging
-structlog.configure(
-    processors=[
-        structlog.stdlib.add_log_level,
-        structlog.stdlib.PositionalArgumentsFormatter(),
-        structlog.processors.TimeStamper(fmt="iso"),
-        structlog.processors.JSONRenderer(),
-    ],
-    logger_factory=structlog.stdlib.LoggerFactory(),
-    wrapper_class=structlog.stdlib.BoundLogger,
-    cache_logger_on_first_use=True,
-)
-logger = structlog.get_logger()
-
-
-@functions_framework.cloud_event
-async def process_video_gcs(cloud_event: CloudEvent) -> None:
+def send_slack_notification(request):
     """
-    Triggered by a CloudEvent on a GCS bucket, this function initiates
-    the multimodal analysis of the uploaded video file.
-
-    Args:
-        cloud_event (CloudEvent): The event payload from GCS.
+    Sends a notification to a Slack channel.
     """
-    log = logger.bind(event_id=cloud_event["id"])
-    log.info("cloud_event_received", event_data=cloud_event.data)
+    slack_webhook_url = os.environ.get("SLACK_WEBHOOK_URL")
+    if not slack_webhook_url:
+        return "SLACK_WEBHOOK_URL not set.", 500
 
+    message = request.get_json().get("message")
+    if not message:
+        return "No message provided.", 400
+
+    payload = {"text": message}
     try:
-        bucket = cloud_event.data["bucket"]
-        name = cloud_event.data["name"]
-    except KeyError as e:
-        log.error("invalid_cloudevent_payload", missing_key=str(e))
-        return
-
-    gcs_uri = f"gs://{bucket}/{name}"
-    log.info("constructed_gcs_uri", uri=gcs_uri)
-
-    try:
-        analysis_result = await extract_multimodal_data(gcs_uri)
-        log.info(
-            "multimodal_analysis_completed",
-            gcs_uri=gcs_uri,
-            result=analysis_result.dict(),
-        )
+        requests.post(slack_webhook_url, json=payload)
+        return "Notification sent.", 200
     except Exception as e:
-        log.error(
-            "multimodal_analysis_failed",
-            gcs_uri=gcs_uri,
-            error=str(e),
-            exc_info=True,
-        )
-        # Depending on requirements, you might want to re-raise,
-        # or handle the failure explicitly (e.g., move file to an error bucket)
-        raise
+        return f"Error sending notification: {e}", 500

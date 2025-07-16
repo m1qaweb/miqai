@@ -1,9 +1,11 @@
 from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain.prompts import ChatPromptTemplate
-from langchain.schema.runnable import Runnable, RunnablePassthrough, RunnableLambda
-from langchain.schema.output_parser import StrOutputParser
+from typing import AsyncGenerator
+from langchain.schema.runnable import Runnable
 from insight_engine.tools.vector_store import VectorStore
-from typing import List
+from .rag_utils import create_rag_chain, RAGInput
+from langchain_community.vectorstores import Qdrant
+from langchain_community.embeddings import OpenAIEmbeddings
+
 
 class SummarizationAgent:
     """
@@ -11,58 +13,44 @@ class SummarizationAgent:
     to produce context-grounded summaries.
     """
 
-    def __init__(self, vector_store: VectorStore):
+    def __init__(self, vector_store: VectorStore, collection_name: str):
         """
         Initializes the SummarizationAgent.
 
         Args:
             vector_store: An instance of the VectorStore service.
+            collection_name: The name of the collection to use.
         """
         self.vector_store = vector_store
         
         # 1. Create a retriever from the VectorStore instance
-        # We wrap the async query method in a RunnableLambda to make it
-        # compatible with the LangChain Expression Language (LCEL).
-        retriever = RunnableLambda(self.vector_store.query)
+        qdrant = Qdrant(
+            client=self.vector_store.client,
+            collection_name=collection_name,
+            embeddings=OpenAIEmbeddings(),
+        )
+        retriever = qdrant.as_retriever()
 
-        # 2. Define the prompt template
-        template = """Answer the user's question based on the following context:
-        
-        Context:
-        {context}
-        
-        Question:
-        {question}
-        """
-        prompt = ChatPromptTemplate.from_template(template)
-
-        # 3. Instantiate the language model
+        # 2. Instantiate the language model
         model = ChatGoogleGenerativeAI(model="gemini-pro")
 
-        # 4. Define a function to format the retrieved documents
-        def format_docs(docs: List[str]) -> str:
-            return "\n\n".join(docs)
+        # 3. Construct the RAG chain using the shared utility
+        self.rag_chain: Runnable = create_rag_chain(model, retriever)
+        self.retriever = retriever
 
-        # 5. Construct the RAG chain using LCEL
-        self.rag_chain: Runnable = (
-            {
-                "context": retriever | format_docs,
-                "question": RunnablePassthrough()
-            }
-            | prompt
-            | model
-            | StrOutputParser()
-        )
-
-    async def generate_summary(self, question: str) -> str:
+    async def generate_summary(self, rag_input: RAGInput) -> AsyncGenerator[str, None]:
         """
         Invokes the RAG chain with the user's question to generate a summary.
 
         Args:
-            question: The user's question or topic for summarization.
+            rag_input: An object containing the user's query and chat history.
 
         Returns:
             The content of the AI's response as a string.
         """
-        response = await self.rag_chain.ainvoke(question)
-        return response
+        retrieved_docs = await self.retriever.ainvoke(rag_input.query)
+        async for chunk in self.rag_chain.astream({
+            "context": retrieved_docs,
+            "question": rag_input.query
+        }):
+            yield chunk

@@ -12,6 +12,7 @@ from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.runnables import Runnable, RunnablePassthrough
 from langchain_core.vectorstores import VectorStoreRetriever
 from pydantic import BaseModel, Field
+from .rag_utils import RAGInput, create_rag_chain
 
 # --- 1. Structured Logging Setup ---
 # Configure a logger that outputs JSON for better observability.
@@ -35,60 +36,10 @@ logger.setLevel(os.getenv("LOG_LEVEL", "INFO"))
 
 
 # --- 2. Pydantic Models for Input/Output ---
-class RAGInput(BaseModel):
-    """Input schema for the RAG agent."""
-    query: str = Field(..., description="The user's question.")
-    chat_history: List[Dict[str, str]] = Field(
-        default_factory=list, description="A list of previous messages in the conversation."
-    )
-
 class RAGOutput(BaseModel):
     """Output schema for the RAG agent stream."""
     content: str
     context: List[Dict[str, Any]]
-
-# --- 3. Core RAG Logic ---
-def format_docs(docs: List[Document]) -> str:
-    """Formats retrieved documents into a single string."""
-    return "\n\n".join(doc.page_content for doc in docs)
-
-def create_rag_chain(
-    llm: BaseChatModel, retriever: VectorStoreRetriever
-) -> Runnable[Dict, str]:
-    """
-    Creates the core RAG chain using LangChain's Runnable interface.
-
-    The chain performs the following steps:
-    1. Retrieves relevant documents from the vector store.
-    2. Formats the documents and the user query into a prompt.
-    3. Sends the prompt to the language model.
-    4. Parses the model's output into a string.
-    """
-    # This prompt template is designed to ground the model's response in the provided context.
-    template = """
-    You are an assistant for question-answering tasks.
-    Use the following pieces of retrieved context to answer the question.
-    If you don't know the answer, just say that you don't know.
-    Keep the answer concise.
-
-    Context:
-    {context}
-
-    Question:
-    {question}
-
-    Answer:
-    """
-    prompt = ChatPromptTemplate.from_template(template)
-
-    # The LCEL chain definition
-    rag_chain = (
-        RunnablePassthrough.assign(context=(lambda x: format_docs(x["context"])))
-        | prompt
-        | llm
-        | StrOutputParser()
-    )
-    return rag_chain
 
 async def run_rag_agent(
     agent_input: RAGInput, llm: BaseChatModel, retriever: VectorStoreRetriever

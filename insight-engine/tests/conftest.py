@@ -1,17 +1,22 @@
 import pytest
-from fastapi import FastAPI
-from httpx import AsyncClient
-
+from unittest.mock import MagicMock
 
 @pytest.fixture
-def app() -> FastAPI:
-    """Create a FastAPI app instance for testing."""
-    app = FastAPI()
-    return app
-
+def mock_gcs_client():
+    """Mocks the GCS client."""
+    return MagicMock()
 
 @pytest.fixture
-async def async_client(app: FastAPI) -> AsyncClient:
-    """Provides an async client for making requests to the app."""
-    async with AsyncClient(app=app, base_url="http://test") as client:
-        yield client
+def mock_pubsub_publisher():
+    """Mocks the Pub/Sub publisher client."""
+    return MagicMock()
+
+@pytest.fixture
+def mock_dlp_client():
+    """Mocks the DLP client."""
+    return MagicMock()
+
+@pytest.fixture
+def mock_vector_store():
+    """Mocks the VectorStore client."""
+    return MagicMock()

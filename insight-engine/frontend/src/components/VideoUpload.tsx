@@ -8,10 +8,16 @@ import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 
 interface VideoUploadProps {
-  onUploadSuccess: Dispatch<SetStateAction<string | null>>;
+  onUploadSuccess: (id: string) => void;
+  onUploadStart: () => void;
+  onUploadReset: () => void;
 }
 
-export function VideoUpload({ onUploadSuccess }: VideoUploadProps) {
+export function VideoUpload({
+  onUploadSuccess,
+  onUploadStart,
+  onUploadReset,
+}: VideoUploadProps) {
   const [file, setFile] = useState<File | null>(null);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -23,7 +29,6 @@ export function VideoUpload({ onUploadSuccess }: VideoUploadProps) {
       setFile(selectedFile);
       setError(null);
       setUploadProgress(0);
-      onUploadSuccess(null);
     }
   };
 
@@ -36,11 +41,10 @@ export function VideoUpload({ onUploadSuccess }: VideoUploadProps) {
     setIsUploading(true);
     setError(null);
     setUploadProgress(0);
-    onUploadSuccess(null);
 
     try {
       const response = await axios.post(
-        "http://localhost:8000/uploads/request-url/",
+        `${process.env.NEXT_PUBLIC_API_URL}/v1/upload`,
         {
           file_name: file.name,
           content_type: file.type,

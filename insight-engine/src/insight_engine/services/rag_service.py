@@ -1,98 +1,71 @@
-"""
-Service for handling the RAG pipeline for video analysis.
-"""
+from typing import AsyncGenerator, Optional
 
-import json
-import asyncio
-import random
-from typing import AsyncGenerator
-from fastapi import BackgroundTasks
-import arq
-
-from insight_engine.services.summarization_chain import RAGChain
-from insight_engine.services.vector_store_service import (
-    VectorStoreService,
-    VectorStoreError,
-)
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain_google_genai import GoogleGenerativeAIEmbeddings
+from fastapi import Depends, HTTPException, status
+from insight_engine.agents.summarization_agent import SummarizationAgent
+from insight_engine.agents.rag_utils import RAGInput
+from insight_engine.tools.vector_store import VectorStore
+from insight_engine.services.redis_service import RedisService, get_redis_service
 
 
-class RAGServiceError(Exception):
-    """Custom exception for RAG service failures."""
-
-    pass
-
-
-async def process_query_stream(
-    file_path: str,
-    query: str,
-    redis_pool: arq.ArqRedis,
-    background_tasks: BackgroundTasks,
-) -> AsyncGenerator[str, None]:
+class RAGService:
     """
-    Orchestrates the RAG pipeline and streams the response.
+    Service for the Retrieval-Augmented Generation (RAG) pipeline.
     """
-    try:
-        # For this simulation, we'll use a hardcoded transcript.
-        # In a real system, this would come from the analysis pipeline.
-        yield f"data: {json.dumps({'status': 'Generating mock transcript...'})}\n\n"
-        transcript = "The video shows a person walking their dog in the park. The dog is a golden retriever. Later, a car drives by on a nearby road."
-        
-        yield f"data: {json.dumps({'status': 'Processing and ingesting content...'})}\n\n"
 
-        vector_store = VectorStoreService(collection_name="video_insights")
+    def __init__(
+        self,
+        redis_service: RedisService = Depends(get_redis_service),
+    ):
+        """
+        Initializes the RAG service.
 
-        # Offload the ingestion to a background task
-        background_tasks.add_task(
-            ingest_multi_modal_content, transcript, file_path, vector_store
+        Args:
+            redis_service: The RedisService dependency.
+        """
+        self.redis_service = redis_service
+
+    async def get_summary_stream(
+        self, user_query: str, video_id: str, user_id: Optional[str] = None
+    ) -> AsyncGenerator[str, None]:
+        """
+        Retrieves context and generates a summary stream, with caching.
+
+        Args:
+            user_query: The user's query.
+            video_id: The ID of the video to summarize.
+
+        Yields:
+            A stream of summary tokens.
+        """
+        # --- Authorization Check ---
+        # Verify that the user is authorized to access the video.
+        vector_store = VectorStore()
+        vector_store = VectorStore()
+        video_metadata = await vector_store.get_video_metadata(video_id)
+
+        if not video_metadata or video_metadata.get("user_id") != user_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="User does not have access to this video.",
+            )
+
+        cache_key = f"summary:{video_id}:{user_query}"
+        cached_summary = await self.redis_service.get(cache_key)
+
+        if cached_summary:
+            yield cached_summary
+            return
+
+        summarization_agent = SummarizationAgent(
+            vector_store=vector_store, collection_name=video_id
         )
+        rag_input = RAGInput(query=user_query)
 
-        # Allow a moment for ingestion to potentially start
-        await asyncio.sleep(1)
+        full_summary = []
+        response_stream = summarization_agent.generate_summary(rag_input)
+        async for chunk in response_stream:
+            full_summary.append(chunk)
+            yield chunk
 
-        yield f"data: {json.dumps({'status': 'Generating answer...'})}\n\n"
-        rag_chain = RAGChain(vector_store=vector_store)
-
-        stream_generator = await rag_chain.stream(question=query)
-        async for chunk in stream_generator:
-            yield f"data: {json.dumps({'token': chunk})}\n\n"
-
-    except (VectorStoreError, Exception) as e:
-        error_message = str(e).replace("\n", " ")
-        yield f"data: {json.dumps({'error': error_message})}\n\n"
-
-    yield f"data: {json.dumps({'status': 'done'})}\n\n"
-
-
-def ingest_multi_modal_content(
-    transcript: str, file_path: str, vector_store: VectorStoreService
-):
-    """
-    A background task to handle the embedding and storage of both the
-    transcript and simulated visual data.
-    """
-    print(f"Background task started: Ingesting multi-modal content for {file_path}")
-    text_splitter = RecursiveCharacterTextSplitter(chunk_size=100, chunk_overlap=10)
-    documents = text_splitter.create_documents([transcript])
-
-    embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
-
-    # Simulate different visual contexts for different parts of the video
-    mock_visual_data = {
-        0: ["person", "dog", "tree", "park bench"],
-        1: ["dog", "golden retriever", "grass"],
-        2: ["car", "road", "tree"],
-    }
-
-    for i, doc in enumerate(documents):
-        text = doc.page_content
-        vector = embeddings.embed_query(text)
-        metadata = {"source_video": file_path, "chunk_text": text}
-        visual_context = mock_visual_data.get(i, []) # Get mock data or an empty list
-
-        vector_store.upsert_documents(
-            documents=[metadata], vectors=[vector], visual_context=visual_context
-        )
-
-    print(f"Background task finished: Ingestion complete for {file_path}")
+        # Cache the full response
+        await self.redis_service.set(cache_key, "".join(full_summary))

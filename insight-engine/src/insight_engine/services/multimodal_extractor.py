@@ -4,8 +4,7 @@
 import asyncio
 from typing import List
 
-from google.cloud import speech
-from google.cloud import videointelligence
+from google.cloud import speech, videointelligence, dlp_v2
 from pydantic import BaseModel
 
 
@@ -22,12 +21,22 @@ class MultimodalExtractor:
     Service to extract multimodal data (transcript, visual labels) from a video.
     """
 
-    async def extract_data(self, video_uri: str) -> ExtractedData:
+    def __init__(self, dlp_client: dlp_v2.DlpServiceClient):
+        """
+        Initializes the MultimodalExtractor.
+
+        Args:
+            dlp_client: An instance of the DlpServiceClient.
+        """
+        self.dlp_client = dlp_client
+
+    async def extract_data(self, video_uri: str, project_id: str) -> ExtractedData:
         """
         Main entry point to extract data from a video concurrently.
 
         Args:
             video_uri: The URI of the video file.
+            project_id: The GCP project ID.
 
         Returns:
             An ExtractedData object containing the transcript and visual labels.
@@ -48,8 +57,10 @@ class MultimodalExtractor:
         transcript = transcript_result if isinstance(transcript_result, str) else ""
         visual_labels = visual_labels_result if isinstance(visual_labels_result, list) else []
 
+        redacted_transcript = await self._redact_text(transcript, project_id)
+
         return ExtractedData(
-            transcript=transcript,
+            transcript=redacted_transcript,
             visual_labels=visual_labels
         )
 
@@ -69,10 +80,12 @@ class MultimodalExtractor:
         operation = await client.long_running_recognize(config=config, audio=audio)
         response = await asyncio.to_thread(operation.result, timeout=300)
 
-        transcript = "".join(
-            result.alternatives[0].transcript for result in response.results
-        )
-        return transcript
+        if response and hasattr(response, 'results'):
+            transcript = "".join(
+                result.alternatives[0].transcript for result in response.results
+            )
+            return transcript
+        return ""
 
     async def _extract_visual_labels(self, video_uri: str) -> list[str]:
         """
@@ -90,9 +103,38 @@ class MultimodalExtractor:
 
         result = await asyncio.to_thread(sync_annotate_video)
 
-        shot_labels = [
-            label.entity.description
-            for annotation in result.annotation_results
-            for label in annotation.shot_label_annotations
-        ]
-        return list(set(shot_labels))
+        if result and result.annotation_results:
+            shot_labels = [
+                label.entity.description
+                for annotation in result.annotation_results
+                for label in annotation.shot_label_annotations
+            ]
+            return list(set(shot_labels))
+        return []
+
+    async def _redact_text(self, text: str, project_id: str) -> str:
+        """
+        Redacts sensitive information from the given text using the DLP API.
+        """
+        parent = f"projects/{project_id}"
+        item = {"value": text}
+        inspect_config = {
+            "info_types": [{"name": "PERSON_NAME"}, {"name": "EMAIL_ADDRESS"}]
+        }
+        deidentify_config = {
+            "info_type_transformations": {
+                "transformations": [
+                    {"primitive_transformation": {"replace_with_info_type_config": {}}}
+                ]
+            }
+        }
+
+        response = self.dlp_client.deidentify_content(
+            request={
+                "parent": parent,
+                "deidentify_config": deidentify_config,
+                "inspect_config": inspect_config,
+                "item": item,
+            }
+        )
+        return response.item.value

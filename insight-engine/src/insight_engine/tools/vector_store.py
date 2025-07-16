@@ -1,92 +1,121 @@
-import asyncio
+"""
+This module provides an interface to interact with a Qdrant vector store.
+It encapsulates the logic for creating collections, upserting vectors, and performing
+similarity searches, which are essential for the RAG pipeline.
+"""
 import uuid
-from typing import List, Dict, Any, Optional
+from typing import List, Optional
 
-import vertexai
 from qdrant_client import QdrantClient, models
-from vertexai.language_models import TextEmbeddingModel
 
 class VectorStore:
-    """A service for handling text embeddings and vector database interactions."""
+    """A client for interacting with a Qdrant vector database."""
 
-    def __init__(self, project_id: str, location: str, collection_name: str = "video_transcripts"):
+    def __init__(self, host: str = "localhost", port: int = 6333):
         """
-        Initializes the VectorStore, setting up the Qdrant client and Vertex AI embedding model.
-        """
-        vertexai.init(project=project_id, location=location)
-        self.qdrant_client = QdrantClient(":memory:")
-        self.embedding_model = TextEmbeddingModel.from_pretrained("textembedding-gecko@001")
-        self.collection_name = collection_name
-
-        self.qdrant_client.recreate_collection(
-            collection_name=self.collection_name,
-            vectors_config=models.VectorParams(size=768, distance=models.Distance.COSINE),
-        )
-
-    async def _generate_embedding(self, text: str) -> List[float]:
-        """
-        Generates an embedding for the given text using Vertex AI.
-        """
-        # Run the synchronous SDK call in a thread to avoid blocking the event loop
-        def get_sync_embeddings():
-            embeddings = self.embedding_model.get_embeddings([text])
-            return embeddings[0].values
-        
-        loop = asyncio.get_running_loop()
-        embedding = await loop.run_in_executor(None, get_sync_embeddings)
-        return embedding
-
-    async def upsert_document(self, document_text: str, metadata: Dict[str, Any]) -> str:
-        """
-        Generates an embedding for the document and upserts it into the Qdrant collection.
+        Initializes the Qdrant client.
 
         Args:
-            document_text: The text content of the document.
-            metadata: A dictionary of metadata associated with the document.
-
-        Returns:
-            The unique ID of the upserted document.
+            host: The hostname of the Qdrant instance.
+            port: The port number of the Qdrant instance.
         """
-        embedding = await self._generate_embedding(document_text)
-        doc_id = str(uuid.uuid4())
-        
-        payload = {"text": document_text, **metadata}
+        self._host = host
+        self._port = port
+        self._client = None
 
-        await asyncio.to_thread(
-            self.qdrant_client.upsert,
-            collection_name=self.collection_name,
-            points=[
-                models.PointStruct(
-                    id=doc_id,
-                    vector=embedding,
-                    payload=payload,
-                )
-            ],
-        )
-        return doc_id
-
-    async def query(self, query_text: str, top_k: int = 5) -> List[str]:
+    @property
+    def client(self):
         """
-        Searches the vector database for documents similar to the query text.
+        Lazily initializes and returns the Qdrant client.
+        This ensures the application can start even if Qdrant is not immediately available.
+        """
+        if self._client is None:
+            try:
+                self._client = QdrantClient(host=self._host, port=self._port)
+            except Exception as e:
+                # In a production environment, you'd want to handle this more gracefully.
+                # For now, we'll re-raise the exception to make the issue visible.
+                print(f"Error connecting to Qdrant: {e}")
+                raise
+        return self._client
+
+    def recreate_collection(self, collection_name: str, vector_size: int):
+        """
+        Creates a new collection in Qdrant if it doesn't already exist.
 
         Args:
-            query_text: The text to search for.
-            top_k: The number of top results to return.
+            collection_name: The name of the collection to create.
+            vector_size: The dimensionality of the vectors that will be stored.
+        """
+        self.client.recreate_collection(
+            collection_name=collection_name,
+            vectors_config=models.VectorParams(size=vector_size, distance=models.Distance.COSINE),
+        )
+
+    def upsert(self, collection_name: str, vectors: List[List[float]], payloads: List[dict]):
+        """
+        Upserts (inserts or updates) vectors into a specified collection.
+
+        Args:
+            collection_name: The name of the collection.
+            vectors: A list of vector embeddings.
+            payloads: A list of metadata dictionaries corresponding to each vector.
+        """
+        self.client.upsert(
+            collection_name=collection_name,
+            points=models.Batch(
+                ids=[str(uuid.uuid4()) for _ in vectors],
+                vectors=vectors,
+                payloads=payloads,
+            ),
+            wait=True,
+        )
+
+    def search(
+        self,
+        collection_name: str,
+        query_vector: List[float],
+        limit: int = 5,
+        score_threshold: Optional[float] = None,
+    ) -> List[models.ScoredPoint]:
+        """
+        Performs a similarity search in the specified collection.
+
+        Args:
+            collection_name: The name of the collection to search in.
+            query_vector: The vector to search with.
+            limit: The maximum number of results to return.
+            score_threshold: An optional threshold to filter results by score.
 
         Returns:
-            A list of strings representing the text of the top search results.
+            A list of ScoredPoint objects representing the search results.
         """
-        query_embedding = await self._generate_embedding(query_text)
-        
-        search_result = await asyncio.to_thread(
-            self.qdrant_client.search,
-            collection_name=self.collection_name,
-            query_vector=query_embedding,
-            limit=top_k,
+        return self.client.search(
+            collection_name=collection_name,
+            query_vector=query_vector,
+            limit=limit,
+            score_threshold=score_threshold,
         )
-        
-        results = []
-        for hit in search_result:
-            if hit.payload and "text" in hit.payload:
-                results.append(hit.payload["text"])
-        return results
+
+    async def get_video_metadata(self, collection_name: str) -> Optional[dict]:
+        """
+        Retrieves the metadata of the first point in a collection.
+
+        Args:
+            collection_name: The name of the collection (video_id).
+
+        Returns:
+            The payload of the first point, or None if not found.
+        """
+        try:
+            points, _ = self.client.scroll(
+                collection_name=collection_name,
+                limit=1,
+                with_payload=True,
+            )
+            if points:
+                return points[0].payload
+            return None
+        except Exception:
+            # If the collection doesn't exist or there's an error, return None.
+            return None
