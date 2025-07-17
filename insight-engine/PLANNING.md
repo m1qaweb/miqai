@@ -165,12 +165,6 @@ Build **The Insight Engine**—a premium AI-powered video analysis platform feat
 * **Auto-scaling:** Configure Cloud Run concurrency.
 * **Cost Dashboard:** Track per-user/feature costs.
 
-### Stage Notes
-
-* **Stage 1 (Wks 1–4):** MVP features over optimizations.
-* **Stage 2 (Wks 5–10):** Decision Engine and feedback loops.
-* **Stage 3 (Wks 11+):** Monetization, API docs, portal.
-
 ### Testing Strategy
 
 * **Unit Tests:** Component isolation.
