@@ -176,3 +176,6 @@ venv_old/
 
 # Local Environment Variables
 .env
+
+# Ignore qdrant storage
+insight-engine/qdrant_storage/
