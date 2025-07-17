@@ -74,6 +74,63 @@ class SamplingConfig(BaseModel):
     safety_guards: SafetyGuardsConfig = Field(default_factory=SafetyGuardsConfig)
 
 
+class LoggingSettings(BaseModel):
+    """Logging configuration settings."""
+    level: str = "INFO"
+    format: str = "structured"  # "structured" or "console"
+    file: Optional[str] = None
+    console: bool = True
+    json_format: Optional[bool] = None  # Auto-detect based on environment
+    max_file_size: str = "10MB"
+    backup_count: int = 5
+    
+    # Logger-specific levels
+    logger_levels: Dict[str, str] = Field(default_factory=lambda: {
+        "uvicorn": "WARNING",
+        "uvicorn.access": "WARNING", 
+        "fastapi": "INFO",
+        "httpx": "WARNING",
+        "google": "WARNING",
+        "urllib3": "WARNING",
+        "insight_engine": "INFO",
+    })
+
+
+class SecuritySettings(BaseModel):
+    """Security configuration settings."""
+    cors_origins: list[str] = Field(default_factory=lambda: [
+        "http://localhost:3000",
+        "http://localhost:3001"
+    ])
+    cors_credentials: bool = True
+    cors_methods: list[str] = Field(default_factory=lambda: ["*"])
+    cors_headers: list[str] = Field(default_factory=lambda: ["*"])
+    
+    # Rate limiting
+    rate_limit_requests_per_minute: int = 100
+    rate_limit_burst: int = 20
+    
+    # Security headers
+    enable_security_headers: bool = True
+    hsts_max_age: int = 31536000
+    content_security_policy: str = "default-src 'self'"
+
+
+class MonitoringSettings(BaseModel):
+    """Monitoring and observability settings."""
+    enable_metrics: bool = True
+    metrics_path: str = "/metrics"
+    health_check_path: str = "/health"
+    
+    # Performance monitoring
+    enable_performance_logging: bool = True
+    slow_query_threshold: float = 1.0  # seconds
+    
+    # External monitoring
+    prometheus_url: Optional[str] = None
+    grafana_url: Optional[str] = None
+
+
 class AuditSettings(BaseModel):
     log_file_path: str = "logs/audit.log"
 
@@ -123,7 +180,14 @@ class Settings(BaseSettings):
     VIDEO_AI_SYSTEM_URL: Optional[str] = None
     AZURE_OPENAI_ENDPOINT: Optional[str] = None
 
+    # --- Application Configuration ---
+    ENVIRONMENT: str = Field(default="development", description="Application environment")
+    DEBUG: bool = Field(default=False, description="Enable debug mode")
+    
     # --- Service Configurations ---
+    logging: LoggingSettings = Field(default_factory=LoggingSettings)
+    security: SecuritySettings = Field(default_factory=SecuritySettings)
+    monitoring: MonitoringSettings = Field(default_factory=MonitoringSettings)
     preprocessing: PreprocessingSettings = Field(default_factory=PreprocessingSettings)
     inference: InferenceSettings = Field(default_factory=InferenceSettings)
     qdrant: QdrantSettings = Field(default_factory=QdrantSettings)

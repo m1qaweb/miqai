@@ -1,7 +1,11 @@
 import os
 from typing import List, Optional
+import logging
 
 from qdrant_client import QdrantClient, models
+from insight_engine.resilience import database_resilient
+
+logger = logging.getLogger(__name__)
 
 
 class VectorDBService:
@@ -21,11 +25,12 @@ class VectorDBService:
         self.port = port
         self.client = QdrantClient(host=self.host, port=self.port)
 
-    def similarity_search(
+    @database_resilient("qdrant_search", fallback=lambda *args, **kwargs: [])
+    async def similarity_search(
         self, collection_name: str, query_vector: List[float], limit: int = 5
     ) -> List[models.ScoredPoint]:
         """
-        Performs a similarity search in the vector database.
+        Performs a similarity search in the vector database with resilience patterns.
 
         Args:
             collection_name: The name of the collection to search in.

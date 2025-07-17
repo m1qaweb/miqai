@@ -8,7 +8,7 @@ approach for more robust and configurable keyframe extraction.
 """
 import asyncio
 import time
-from typing import Generator, List, Callable, Dict
+from typing import Generator, List, Callable, Dict, Tuple, Any
 from PIL import Image
 import imagehash
 
@@ -24,14 +24,14 @@ class VideoPreprocessor:
     plus frame transformation and resource-aware processing.
     """
 
-    def __init__(self, config: dict):
+    def __init__(self, config: Dict[str, any]) -> None:
         """
         Initializes the preprocessor with configuration.
 
         Args:
-            config (dict): A dictionary containing keys like 'HASH_ALGORITHM',
-                           'HASH_DISTANCE_THRESHOLD', 'HASH_SIZE', 'TARGET_SIZE',
-                           'CPU_THRESHOLD', 'THROTTLE_DELAY'.
+            config: A dictionary containing keys like 'HASH_ALGORITHM',
+                    'HASH_DISTANCE_THRESHOLD', 'HASH_SIZE', 'TARGET_SIZE',
+                    'CPU_THRESHOLD', 'THROTTLE_DELAY'.
         """
         self.config = config
         # Dynamically select the hashing function based on config
@@ -46,7 +46,7 @@ class VideoPreprocessor:
             f"VideoPreprocessor initialized with strategy: {self.hash_algorithm}"
         )
 
-    def _throttle(self):
+    def _throttle(self) -> None:
         """
         Pauses execution if CPU usage exceeds the configured threshold.
         """

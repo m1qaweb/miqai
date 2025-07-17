@@ -2,10 +2,15 @@
 # 1. Google Cloud SDK installed and authenticated.
 #    Run `gcloud auth application-default login` to authenticate.
 import asyncio
+import logging
 from typing import List
 
 from google.cloud import speech, videointelligence, dlp_v2
 from pydantic import BaseModel
+from insight_engine.resilience import gcp_resilient
+from insight_engine.resilience.fallbacks import FallbackManager
+
+logger = logging.getLogger(__name__)
 
 
 class ExtractedData(BaseModel):
@@ -64,10 +69,12 @@ class MultimodalExtractor:
             visual_labels=visual_labels
         )
 
+    @gcp_resilient("speech_to_text", fallback=FallbackManager.speech_to_text_fallback)
     async def _extract_transcript(self, video_uri: str) -> str:
         """
         Extracts transcript from the video's audio track using Google Cloud Speech-to-Text.
         """
+        logger.info(f"Extracting transcript from video: {video_uri}")
         client = speech.SpeechAsyncClient()
 
         config = speech.RecognitionConfig(
@@ -84,13 +91,18 @@ class MultimodalExtractor:
             transcript = "".join(
                 result.alternatives[0].transcript for result in response.results
             )
+            logger.info(f"Successfully extracted transcript ({len(transcript)} characters)")
             return transcript
+        
+        logger.warning("No transcript results returned from Speech-to-Text API")
         return ""
 
+    @gcp_resilient("video_intelligence", fallback=FallbackManager.video_intelligence_fallback)
     async def _extract_visual_labels(self, video_uri: str) -> list[str]:
         """
-        Extracts visual labels from the video frames using Google Cloud Vision API.
+        Extracts visual labels from the video frames using Google Cloud Video Intelligence API.
         """
+        logger.info(f"Extracting visual labels from video: {video_uri}")
         client = videointelligence.VideoIntelligenceServiceClient()
 
         features = [videointelligence.Feature.LABEL_DETECTION]
@@ -109,13 +121,23 @@ class MultimodalExtractor:
                 for annotation in result.annotation_results
                 for label in annotation.shot_label_annotations
             ]
-            return list(set(shot_labels))
+            unique_labels = list(set(shot_labels))
+            logger.info(f"Successfully extracted {len(unique_labels)} unique visual labels")
+            return unique_labels
+        
+        logger.warning("No visual labels returned from Video Intelligence API")
         return []
 
+    @gcp_resilient("dlp", fallback=FallbackManager.dlp_fallback)
     async def _redact_text(self, text: str, project_id: str) -> str:
         """
         Redacts sensitive information from the given text using the DLP API.
         """
+        if not text.strip():
+            return text
+            
+        logger.info(f"Redacting sensitive information from text ({len(text)} characters)")
+        
         parent = f"projects/{project_id}"
         item = {"value": text}
         inspect_config = {
@@ -137,4 +159,7 @@ class MultimodalExtractor:
                 "item": item,
             }
         )
-        return response.item.value
+        
+        redacted_text = response.item.value
+        logger.info("Successfully redacted sensitive information")
+        return redacted_text

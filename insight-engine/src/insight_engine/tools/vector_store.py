@@ -4,9 +4,13 @@ It encapsulates the logic for creating collections, upserting vectors, and perfo
 similarity searches, which are essential for the RAG pipeline.
 """
 import uuid
+import logging
 from typing import List, Optional
 
 from qdrant_client import QdrantClient, models
+from insight_engine.resilience import database_resilient
+
+logger = logging.getLogger(__name__)
 
 class VectorStore:
     """A client for interacting with a Qdrant vector database."""
@@ -39,9 +43,10 @@ class VectorStore:
                 raise
         return self._client
 
-    def recreate_collection(self, collection_name: str, vector_size: int):
+    @database_resilient("qdrant_recreate_collection", fallback=lambda *args, **kwargs: None)
+    async def recreate_collection(self, collection_name: str, vector_size: int):
         """
-        Creates a new collection in Qdrant if it doesn't already exist.
+        Creates a new collection in Qdrant if it doesn't already exist with resilience patterns.
 
         Args:
             collection_name: The name of the collection to create.

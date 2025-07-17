@@ -9,10 +9,13 @@ from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
 
 
-def configure_tracing(service_name: str = "video-ai-system"):
+def configure_tracing(service_name: str = "video-ai-system") -> None:
     """
     Configures OpenTelemetry tracing to send spans to an OTLP collector.
     This should be called once on application startup.
+    
+    Args:
+        service_name: Name of the service for tracing identification
     """
     # Create a resource to identify our service
     resource = Resource(
