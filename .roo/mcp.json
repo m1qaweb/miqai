@@ -1,27 +1,5 @@
 {
   "mcpServers": {
-    "github": {
-      "command": "docker",
-      "args": [
-        "run",
-        "-i",
-        "--rm",
-        "-e",
-        "GITHUB_PERSONAL_ACCESS_TOKEN",
-        "-e",
-        "GITHUB_TOOLSETS",
-        "-e",
-        "GITHUB_READ_ONLY",
-        "ghcr.io/github/github-mcp-server"
-      ],
-      "env": {
-        "GITHUB_PERSONAL_ACCESS_TOKEN": "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",
-        "GITHUB_TOOLSETS": "",
-        "GITHUB_READ_ONLY": ""
-      },
-      "disabled": true,
-      "alwaysAllow": []
-    },
     "context7": {
       "command": "npx",
       "args": [
@@ -70,6 +48,14 @@
         "-y",
         "@modelcontextprotocol/server-postgres",
         "postgresql://user:password@localhost:5432/mydb"
+      ]
+    },
+    "git": {
+      "command": "uvx",
+      "args": [
+        "mcp-server-git",
+        "--repository",
+        "https://github.com/m1qaweb/miqai.git"
       ]
     }
   }
